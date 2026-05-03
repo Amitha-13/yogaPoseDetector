@@ -13,59 +13,62 @@ import Yog6 from "./Pages/YogaPages/Yog6";
 import LoginPage from "./Pages/LoginPage";
 import MetadataPage from "./Pages/MetadataPage";
 import ConsentPage from "./Pages/ConsentPage";
+import HardwarePage from "./Pages/HardwarePage";
+import SequencerPage from "./Pages/SequencerPage";
+import ReviewPage from "./Pages/ReviewPage";
+import PracticeHomePage from "./Pages/Practice/PracticeHomePage";
+import PracticeSessionPage from "./Pages/Practice/PracticeSessionPage";
 import { SessionContextProvider } from "./context/SessionContext";
-import RequireSession from "./components/RequireSession";
+import { PracticeContextProvider } from "./context/PracticeContext";
+import RequireSession from "./Components/RequireSession";
 
 const App = () => {
   return (
     <div className="app">
       <SessionContextProvider>
-        <BrowserRouter>
-          <Navbar />
-          <Routes>
-            <Route path="/">
-              <Route index element={<Home />} />
-              <Route path="about" element={<About />} />
-              <Route path="whats" element={<Whats />} />
-              <Route path="learn">
-                <Route index element={<Navigate to="/login" replace />} />
-                <Route path="yog1" element={<Yog1 />} />
-                <Route path="yog2" element={<Yog2 />} />
-                <Route path="yog3" element={<Yog3 />} />
-                <Route path="yog4" element={<Yog4 />} />
-                <Route path="yog5" element={<Yog5 />} />
-                <Route path="yog6" element={<Yog6 />} />
+        <PracticeContextProvider>
+          <BrowserRouter>
+            <Navbar />
+            <Routes>
+              <Route path="/">
+                <Route index element={<Home />} />
+                <Route path="about" element={<About />} />
+                <Route path="whats" element={<Whats />} />
+                <Route path="learn">
+                  <Route index element={<Navigate to="/login" replace />} />
+                  <Route path="yog1" element={<Yog1 />} />
+                  <Route path="yog2" element={<Yog2 />} />
+                  <Route path="yog3" element={<Yog3 />} />
+                  <Route path="yog4" element={<Yog4 />} />
+                  <Route path="yog5" element={<Yog5 />} />
+                  <Route path="yog6" element={<Yog6 />} />
+                </Route>
               </Route>
-            </Route>
-            <Route path="/login" element={<LoginPage />} />
-            <Route
-              path="/metadata"
-              element={
-                <RequireSession step="metadata">
-                  <MetadataPage />
-                </RequireSession>
-              }
-            />
-            <Route
-              path="/consent"
-              element={
-                <RequireSession step="consent">
-                  <ConsentPage />
-                </RequireSession>
-              }
-            />
-            <Route
-              path="/hardware"
-              element={
-                <RequireSession step="hardware">
-                  <div>Phase 2 coming</div>
-                </RequireSession>
-              }
-            />
-            <Route path="/sequencer" element={<div>Phase 3 coming</div>} />
-            <Route path="/review" element={<div>Phase 4 coming</div>} />
-          </Routes>
-        </BrowserRouter>
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/practice" element={<PracticeHomePage />} />
+              <Route path="/practice/session" element={<PracticeSessionPage />} />
+              <Route
+                path="/metadata"
+                element={
+                  <RequireSession step="metadata">
+                    <MetadataPage />
+                  </RequireSession>
+                }
+              />
+              <Route
+                path="/consent"
+                element={
+                  <RequireSession step="consent">
+                    <ConsentPage />
+                  </RequireSession>
+                }
+              />
+              <Route path="/hardware" element={<HardwarePage />} />
+              <Route path="/sequencer" element={<SequencerPage />} />
+              <Route path="/review" element={<ReviewPage />} />
+            </Routes>
+          </BrowserRouter>
+        </PracticeContextProvider>
       </SessionContextProvider>
     </div>
   );

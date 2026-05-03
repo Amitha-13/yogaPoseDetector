@@ -34,6 +34,8 @@ export const SessionContextProvider = ({ children }) => {
   const [selectedPoses, setSelectedPoses] = useState([]);
   const [driveAccessToken, setDriveAccessToken] = useState(null);
   const [sessionRecordings, setSessionRecordings] = useState([]);
+  const [tZero, setTZero] = useState(null);
+  const [cameraStream, setCameraStream] = useState(null);
 
   const consentGiven = Object.values(consentChecks).every(Boolean);
 
@@ -53,6 +55,10 @@ export const SessionContextProvider = ({ children }) => {
       setDriveAccessToken,
       sessionRecordings,
       setSessionRecordings,
+      tZero,
+      setTZero,
+      cameraStream,
+      setCameraStream,
     }),
     [
       operatorInfo,
@@ -63,6 +69,8 @@ export const SessionContextProvider = ({ children }) => {
       selectedPoses,
       driveAccessToken,
       sessionRecordings,
+      tZero,
+      cameraStream,
     ]
   );
 

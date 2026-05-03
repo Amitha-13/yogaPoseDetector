@@ -3,6 +3,7 @@ const CONFIG = {
     YOGA_DATASET_FOLDER_ID: 'YOUR_FOLDER_ID_HERE',
     LAB_NAME: 'Your Lab Name',
     INSTITUTION: 'Your Institution',
+    ESP32_WS_URL: 'ws://192.168.1.100:81',
   }
   
   export default CONFIG

@@ -40,14 +40,51 @@ margin: auto;
     width: 70%;
 
 }
-.homeinfo_button > button{
-    background-color: #F4761F;
-    border: none;
-    width: 150px;
-    height: 40px;
+.homeModuleCards {
+    max-width: 720px;
 }
-.homeinfo_button > button:hover{
-    background-color: #f08940;
+
+.homeModuleCard {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.25rem 1.5rem;
+    border-radius: 12px;
+    color: #fff;
+    min-height: 88px;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    border: none;
+}
+
+.homeModuleCard:hover {
+    color: #fff;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+
+.homeModuleCard--data {
+    background: linear-gradient(135deg, #0d1b4d 0%, #1e3a6e 100%);
+}
+
+.homeModuleCard--practice {
+    background: linear-gradient(135deg, #f4761f 0%, #e86510 100%);
+}
+
+.homeModuleCard__icon {
+    font-size: 2rem;
+    line-height: 1;
+}
+
+.homeModuleCard__title {
+    font-size: 1.35rem;
+    font-weight: 600;
+    line-height: 1.2;
+}
+
+.homeModuleCard__subtitle {
+    font-size: 0.9rem;
+    opacity: 0.92;
+    margin-top: 0.25rem;
 }
 
 .homeInfo_heading{
