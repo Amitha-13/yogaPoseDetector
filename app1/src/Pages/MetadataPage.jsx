@@ -3,10 +3,12 @@ import { useNavigate } from "react-router-dom";
 import { useSession } from "../context/SessionContext";
 import "./MetadataPage.css";
 
-const requiredFields = ["age", "gender", "height", "weight", "experience"];
+const requiredFields = ["name", "age", "gender", "height", "weight", "experience"];
 
 const validateField = (name, value) => {
   const stringValue = String(value ?? "").trim();
+
+  if (name === "name" && !stringValue) return "Participant name is required.";
 
   if (name === "age") {
     const age = Number(stringValue);
@@ -105,6 +107,7 @@ const MetadataPage = () => {
               id="age"
               className="meta-input"
               type="number"
+              required
               min="10"
               max="90"
               value={formData.age}
@@ -121,6 +124,7 @@ const MetadataPage = () => {
             <select
               id="gender"
               className="meta-select"
+              required
               value={formData.gender}
               onChange={(event) => updateField("gender", event.target.value)}
               onBlur={() => onBlur("gender")}
@@ -142,6 +146,7 @@ const MetadataPage = () => {
               id="height"
               className="meta-input"
               type="number"
+              required
               value={formData.height}
               onChange={(event) => updateField("height", event.target.value)}
               onBlur={() => onBlur("height")}
@@ -157,6 +162,7 @@ const MetadataPage = () => {
               id="weight"
               className="meta-input"
               type="number"
+              required
               value={formData.weight}
               onChange={(event) => updateField("weight", event.target.value)}
               onBlur={() => onBlur("weight")}
@@ -171,6 +177,7 @@ const MetadataPage = () => {
             <select
               id="experience"
               className="meta-select"
+              required
               value={formData.experience}
               onChange={(event) => updateField("experience", event.target.value)}
               onBlur={() => onBlur("experience")}
@@ -187,16 +194,19 @@ const MetadataPage = () => {
 
           <div className="meta-field-full">
             <label className="meta-label" htmlFor="name">
-              Participant Name <span className="optional-tag">Optional</span>
+              Participant Name
             </label>
             <input
               id="name"
               className="meta-input"
               type="text"
-              placeholder="Leave blank to keep anonymous"
+              required
+              placeholder="Enter participant name"
               value={formData.name}
               onChange={(event) => updateField("name", event.target.value)}
+              onBlur={() => onBlur("name")}
             />
+            {touched.name && errors.name && <p className="field-error">{errors.name}</p>}
           </div>
 
           <div className="meta-field-full">

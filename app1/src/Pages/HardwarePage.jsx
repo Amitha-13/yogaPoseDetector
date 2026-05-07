@@ -4,27 +4,31 @@ import { useSession } from "../context/SessionContext";
 import CONFIG from "../config";
 import "./HardwarePage.css";
 
-const DEFAULT_ESP32_WS = "ws://192.168.1.100:81";
+const DEFAULT_BACKEND_WS = "ws://localhost:5001";
+const DEFAULT_BACKEND_REST = "http://localhost:5001";
 
 function HardwarePage() {
   const navigate = useNavigate();
-  const { setTZero, setCameraStream } = useSession();
+  const { setTZero, setCameraStream, participantId, metadata } = useSession();
 
   const [stream, setStream] = useState(null);
   const [cameraError, setCameraError] = useState(null);
   const [cameraReady, setCameraReady] = useState(false);
-  const [esp32Status, setEsp32Status] = useState("disconnected");
+  const [backendStatus, setBackendStatus] = useState("disconnected");
   const [imuMode, setImuMode] = useState("synthetic");
   const [calibrationDone, setCalibrationDone] = useState(false);
   const [packetCount, setPacketCount] = useState(0);
+  const [moduleStatus, setModuleStatus] = useState({});
+  const [moduleCount, setModuleCount] = useState(0);
 
   const videoRef = useRef(null);
-  const wsRef = useRef(null);
+  const backendWsRef = useRef(null);
   const retainedForSessionRef = useRef(false);
   const packetTotalRef = useRef(0);
   const syntheticWorkerRef = useRef(null);
 
-  const wsUrl = CONFIG.ESP32_WS_URL ?? DEFAULT_ESP32_WS;
+  const backendWsUrl = CONFIG.BACKEND_WS_URL ?? DEFAULT_BACKEND_WS;
+  const backendRestUrl = CONFIG.BACKEND_REST_URL ?? DEFAULT_BACKEND_REST;
 
   useEffect(() => {
     let cancelled = false;
@@ -68,49 +72,54 @@ function HardwarePage() {
   }, [stream]);
 
   useEffect(() => {
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
+    const ws = new WebSocket(`${backendWsUrl.replace(/\/$/, "")}/ws`);
+    backendWsRef.current = ws;
 
     ws.onopen = () => {
-      setEsp32Status("connected");
-      setImuMode("real");
+      setBackendStatus("connected");
+      setImuMode("backend");
       packetTotalRef.current = 0;
       setPacketCount(0);
+      setModuleStatus({});
+      setModuleCount(0);
     };
 
     ws.onmessage = (event) => {
-      let pkt = null;
       try {
-        pkt = JSON.parse(event.data);
-      } catch {
-        pkt = { raw: event.data };
-      }
-      if (pkt && typeof pkt === "object") {
-        packetTotalRef.current += 1;
-        const n = packetTotalRef.current;
-        if (n % 50 === 0) {
-          setPacketCount(n);
+        const msg = JSON.parse(event.data);
+        if (msg.type === "status") {
+          const modules = msg.modules || {};
+          setModuleStatus(modules);
+          setModuleCount(msg.moduleCount ?? Object.keys(modules).length);
+        } else if (msg.type === "frame") {
+          packetTotalRef.current += 1;
+          const n = packetTotalRef.current;
+          if (n % 10 === 0) {
+            setPacketCount(n);
+          }
         }
+      } catch {
+        // Ignore malformed backend frames
       }
     };
 
     ws.onerror = () => {
-      setEsp32Status("disconnected");
+      setBackendStatus("disconnected");
       setImuMode("synthetic");
     };
 
     ws.onclose = () => {
-      setEsp32Status("disconnected");
+      setBackendStatus("disconnected");
       setImuMode("synthetic");
     };
 
     return () => {
-      if (wsRef.current) {
-        wsRef.current.close();
-        wsRef.current = null;
+      if (backendWsRef.current) {
+        backendWsRef.current.close();
+        backendWsRef.current = null;
       }
     };
-  }, [wsUrl]);
+  }, [backendWsUrl]);
 
   useEffect(() => {
     if (imuMode !== "synthetic") {
@@ -161,7 +170,19 @@ function HardwarePage() {
     retainedForSessionRef.current = true;
     setTZero(t0);
     setCameraStream(stream);
-    navigate("/sequencer");
+    fetch(`${backendRestUrl.replace(/\/$/, "")}/session/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        participantId,
+        participantName: metadata?.name || "participant",
+        sessionId: `session_${Date.now()}`,
+      }),
+    })
+      .catch(() => {
+        // Backend may be down; sequencer can still run with fallback.
+      })
+      .finally(() => navigate("/sequencer"));
   };
 
   const systemsReady = cameraReady && calibrationDone;
@@ -207,28 +228,43 @@ function HardwarePage() {
                 <div>
                   <div className="fw-medium">IMU Data</div>
                   <div className="small text-muted">
-                    Packets: {packetCount}
+                    Aggregated frames: {packetCount}
                   </div>
                 </div>
-                {imuMode === "real" ? (
-                  <span className="badge bg-success">ESP32 Live</span>
+                {imuMode === "backend" ? (
+                  <span className="badge bg-success">{moduleCount} modules connected</span>
                 ) : (
                   <span className="badge bg-warning text-dark">
-                    Synthetic 50Hz
+                    Synthetic fallback
                   </span>
                 )}
               </div>
 
               <div className="status-row">
-                <span className="fw-medium">ESP32</span>
-                {esp32Status === "connected" ? (
+                <span className="fw-medium">Backend</span>
+                {backendStatus === "connected" ? (
                   <span className="badge bg-success">Connected</span>
                 ) : (
                   <span className="badge bg-secondary">
-                    Not connected (optional)
+                    Not connected (fallback mode)
                   </span>
                 )}
               </div>
+
+              {Object.entries(moduleStatus).length > 0 ? (
+                <div className="mt-3">
+                  {Object.entries(moduleStatus).map(([id, mod]) => (
+                    <div key={id} className="d-flex justify-content-between small mb-1">
+                      <span>
+                        #{id} {mod.bodyPart || `Module ${id}`}
+                      </span>
+                      <span>
+                        SOC {mod.soc ?? "--"}% | RSSI {mod.rssi ?? "--"} dBm
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </div>
           </div>
 

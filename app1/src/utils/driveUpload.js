@@ -126,6 +126,18 @@ function sanitizeFilePart(str) {
     .slice(0, 80) || "pose";
 }
 
+function makeParticipantFolderName(name, participantId) {
+  const normalizedName = String(name || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_|_$/g, "");
+  const base = normalizedName || sanitizeFilePart(participantId).toUpperCase();
+  const randomSuffix = String(Math.floor(Math.random() * 100000)).padStart(5, "0");
+  return `${base}_${randomSuffix}`;
+}
+
 /**
  * @param {object} recording
  * @param {object} metadata
@@ -248,8 +260,9 @@ export async function uploadSession(
     sessionFolderId = resume.sessionFolderId;
   } else {
     const today = new Date().toISOString().slice(0, 10);
+    const participantFolderName = makeParticipantFolderName(metadata?.name, participantId);
     participantFolderId = await createDriveFolder(
-      participantId,
+      participantFolderName,
       CONFIG.YOGA_DATASET_FOLDER_ID,
       accessToken
     );
