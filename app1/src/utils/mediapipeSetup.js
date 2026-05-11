@@ -7,7 +7,8 @@ export function initMediaPipe(
   videoElement,
   canvasElement,
   onLandmarks,
-  tZero
+  tZero,
+  onRawResults
 ) {
   if (typeof window.Pose !== "function") {
     console.warn("MediaPipe Pose script not loaded");
@@ -81,6 +82,11 @@ export function initMediaPipe(
     canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
     if (results.poseLandmarks) {
+      // Live Data Bridge: Send raw landmarks if callback provided
+      if (typeof onRawResults === "function") {
+        onRawResults(results.poseLandmarks);
+      }
+
       const drawLandmarksFn =
         typeof window.drawLandmarks === "function"
           ? window.drawLandmarks

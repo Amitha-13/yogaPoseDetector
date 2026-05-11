@@ -49,6 +49,22 @@ function SequencerPage() {
   const recordingStartRef = useRef(0);
   const recordingCancelRef = useRef(null);
   const selectedPoseIndexRef = useRef(null);
+  const wsRef = useRef(null);
+
+  useEffect(() => {
+    // Live Data Bridge: Initialize WebSocket connection to backend
+    const ws = new WebSocket("ws://localhost:5001/ws/landmarks");
+    ws.onopen = () => console.log("Landmark WebSocket connected");
+    ws.onerror = (e) => console.error("Landmark WebSocket error", e);
+    ws.onclose = () => console.log("Landmark WebSocket closed");
+    wsRef.current = ws;
+
+    return () => {
+      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+        ws.close();
+      }
+    };
+  }, []);
 
   useEffect(() => {
     selectedPoseIndexRef.current = selectedPoseIndex;
@@ -208,7 +224,12 @@ function SequencerPage() {
             videoRef.current,
             canvasRef.current,
             (frameData) => landmarkBufferRef.current.push(frameData),
-            tZeroRef.current
+            tZeroRef.current,
+            (rawLandmarks) => {
+              if (wsRef.current?.readyState === WebSocket.OPEN) {
+                wsRef.current.send(JSON.stringify(rawLandmarks));
+              }
+            }
           );
         } catch {
           /* MediaPipe CDN may be blocked */
@@ -338,10 +359,10 @@ function SequencerPage() {
       ) : null}
 
       {view === "select" ? (
-        <div className="sequencer-select-view">
-          <div className="sequencer-select-header">
+        <div className="container-fluid py-4 sequencer-select-view">
+          <div className="sequencer-select-header px-3">
             <div />
-            <div className="sequencer-counter">
+            <div className="sequencer-counter badge bg-light text-dark border">
               {recordedCount} of 10 poses recorded
             </div>
           </div>
@@ -352,35 +373,39 @@ function SequencerPage() {
               Choose any pose from the list below. You can record each pose
               independently.
             </p>
-            <p className="sequencer-participant-id">{participantId}</p>
           </div>
 
-          <div className="sequencer-pose-grid">
+          <div className="row g-4 px-3">
             {POSES.map((p, i) => {
               const recorded = isPoseRecorded(p.name);
               return (
-                <button
-                  key={p.id}
-                  type="button"
-                  className={`sequencer-pose-card${recorded ? " sequencer-pose-card-recorded" : ""}`}
-                  onClick={() => handlePoseCardClick(i)}
-                >
-                  <span className="sequencer-pose-card-name">{p.name}</span>
-                  <span className="sequencer-pose-card-sanskrit">{p.sanskrit}</span>
-                  <span
-                    className={`sequencer-badge${recorded ? " sequencer-badge-recorded" : " sequencer-badge-pending"}`}
+                <div key={p.id} className="col-12 col-md-6 col-lg-4">
+                  <button
+                    type="button"
+                    className={`w-100 sequencer-pose-card${recorded ? " sequencer-pose-card-recorded" : ""}`}
+                    onClick={() => handlePoseCardClick(i)}
                   >
-                    {recorded ? "Recorded ✓" : "Not recorded"}
-                  </span>
-                </button>
+                    <div className="d-flex align-items-center flex-wrap gap-2">
+                      <span className="sequencer-pose-card-name">{p.name}</span>
+                      <span className="text-muted">·</span>
+                      <span className="sequencer-pose-card-sanskrit">{p.sanskrit}</span>
+                      <span className="text-muted">·</span>
+                      <span
+                        className={`sequencer-badge${recorded ? " sequencer-badge-recorded" : " sequencer-badge-pending"}`}
+                      >
+                        {recorded ? "Recorded ✓" : "Not recorded"}
+                      </span>
+                    </div>
+                  </button>
+                </div>
               );
             })}
           </div>
 
-          <div className="sequencer-select-footer">
+          <div className="sequencer-select-footer mt-5">
             <button
               type="button"
-              className="sequencer-btn sequencer-btn-finish"
+              className="btn btn-success sequencer-btn-finish"
               disabled={recordedCount < 1}
               onClick={() => navigate("/review")}
             >
