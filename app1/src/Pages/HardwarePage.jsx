@@ -196,10 +196,19 @@ function HardwarePage() {
               {cameraError}
             </div>
           ) : (
-            <div className="video-container">
+            <div
+              className="video-container"
+              style={{ position: "relative", width: "100%" }}
+            >
               <video
                 ref={videoRef}
                 className="w-100"
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  display: "block",
+                  objectFit: "cover",
+                }}
                 muted
                 autoPlay
                 playsInline

@@ -2,7 +2,78 @@
  * MediaPipe Pose via CDN globals (Pose, Camera utils).
  * Uses requestAnimationFrame to feed frames instead of Camera.start() so we do not
  * replace the existing getUserMedia stream on the video element during recording.
+ *
+ * Overlay alignment: landmarks are normalized (0–1) to the full video frame that
+ * MediaPipe processes. The <video> uses object-fit: cover, which crops that frame
+ * when the element's aspect ratio differs. Drawing must map normalized coords into
+ * the same visible sub-rectangle as the video, then scale by devicePixelRatio.
  */
+
+/**
+ * Visible rect of the video bitmap inside the element when object-fit is `cover`
+ * (same math as CSS).
+ */
+function getObjectFitCoverLayout(
+  intrinsicWidth,
+  intrinsicHeight,
+  containerWidth,
+  containerHeight
+) {
+  const scale = Math.max(
+    containerWidth / intrinsicWidth,
+    containerHeight / intrinsicHeight
+  );
+  const displayedWidth = intrinsicWidth * scale;
+  const displayedHeight = intrinsicHeight * scale;
+  const offsetX = (containerWidth - displayedWidth) / 2;
+  const offsetY = (containerHeight - displayedHeight) / 2;
+  return { displayedWidth, displayedHeight, offsetX, offsetY };
+}
+
+function drawNormalizedLandmarksAsDots(
+  ctx,
+  landmarks,
+  mapX,
+  mapY,
+  options
+) {
+  if (!landmarks?.length) return;
+  const { color, radius = 4 } = options || {};
+  ctx.fillStyle = color || "#FF0000";
+  for (const lm of landmarks) {
+    ctx.beginPath();
+    ctx.arc(mapX(lm), mapY(lm), radius, 0, 2 * Math.PI);
+    ctx.fill();
+  }
+}
+
+function drawNormalizedConnections(
+  ctx,
+  landmarks,
+  connections,
+  mapX,
+  mapY,
+  options
+) {
+  if (!connections?.length || !landmarks?.length) return;
+  const { color, lineWidth = 3 } = options || {};
+  ctx.strokeStyle = color || "#00FF00";
+  ctx.lineWidth = lineWidth;
+  ctx.beginPath();
+  for (const conn of connections) {
+    const startIdx =
+      conn?.start !== undefined ? conn.start : conn?.[0];
+    const endIdx =
+      conn?.end !== undefined ? conn.end : conn?.[1];
+    const a = landmarks[startIdx];
+    const b = landmarks[endIdx];
+    if (!a || !b) continue;
+    ctx.moveTo(mapX(a), mapY(a));
+    ctx.lineTo(mapX(b), mapY(b));
+  }
+  ctx.stroke();
+}
+
 export function initMediaPipe(
   videoElement,
   canvasElement,
@@ -13,6 +84,14 @@ export function initMediaPipe(
     console.warn("MediaPipe Pose script not loaded");
     return function noop() {};
   }
+
+  canvasElement.style.position = "absolute";
+  canvasElement.style.top = "0";
+  canvasElement.style.left = "0";
+  canvasElement.style.width = "100%";
+  canvasElement.style.height = "100%";
+  canvasElement.style.pointerEvents = "none";
+  canvasElement.style.zIndex = "2";
 
   const pose = new window.Pose({
     locateFile: (file) =>
@@ -33,68 +112,67 @@ export function initMediaPipe(
   let isRunning = true;
   let rafId = 0;
 
-  const drawFrame = (
-    landmarks,
-    ctx,
-    connectors,
-    drawConnectorsFn,
-    drawLandmarksFn
-  ) => {
-    if (
-      typeof drawConnectorsFn === "function" &&
-      typeof drawLandmarksFn === "function" &&
-      connectors
-    ) {
-      drawConnectorsFn(ctx, landmarks, connectors, {
-        color: "#00FF00",
-        lineWidth: 3,
-      });
-      drawLandmarksFn(ctx, landmarks, {
-        color: "#FF0000",
-        lineWidth: 2,
-        radius: 4,
-      });
-      return;
-    }
-    ctx.fillStyle = "#ff0000";
-    for (const lm of landmarks) {
-      ctx.beginPath();
-      ctx.arc(
-        lm.x * canvasElement.width,
-        lm.y * canvasElement.height,
-        4,
-        0,
-        2 * Math.PI
-      );
-      ctx.fill();
-    }
-  };
-
   pose.onResults((results) => {
     if (!isRunning) return;
 
     if (!videoElement.videoWidth) return;
 
-    canvasElement.width = videoElement.videoWidth;
-    canvasElement.height = videoElement.videoHeight;
+    const rect = videoElement.getBoundingClientRect();
+    const cssW = rect.width;
+    const cssH = rect.height;
+    if (cssW <= 0 || cssH <= 0) return;
 
-    canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+    const vw = videoElement.videoWidth;
+    const vh = videoElement.videoHeight;
+
+    const { displayedWidth, displayedHeight, offsetX, offsetY } =
+      getObjectFitCoverLayout(vw, vh, cssW, cssH);
+
+    const dpr =
+      typeof window !== "undefined"
+        ? Math.min(window.devicePixelRatio || 1, 3)
+        : 1;
+
+    const bufW = Math.max(1, Math.round(cssW * dpr));
+    const bufH = Math.max(1, Math.round(cssH * dpr));
+
+    canvasElement.width = bufW;
+    canvasElement.height = bufH;
+
+    canvasElement.style.width = cssW + "px";
+    canvasElement.style.height = cssH + "px";
+
+    canvasCtx.save();
+
+    canvasCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    canvasCtx.clearRect(0, 0, cssW, cssH);
+
+    const mapX = (lm) => offsetX + lm.x * displayedWidth;
+    const mapY = (lm) => offsetY + lm.y * displayedHeight;
 
     if (results.poseLandmarks) {
-      const drawLandmarksFn =
-        typeof window.drawLandmarks === "function"
-          ? window.drawLandmarks
-          : undefined;
-      const drawConnectorsFn =
-        typeof window.drawConnectors === "function"
-          ? window.drawConnectors
-          : undefined;
-      drawFrame(
-        results.poseLandmarks,
+      drawNormalizedConnections(
         canvasCtx,
+        results.poseLandmarks,
         window.POSE_CONNECTIONS,
-        drawConnectorsFn,
-        drawLandmarksFn
+        mapX,
+        mapY,
+        {
+          color: "#00FF00",
+          lineWidth: 3,
+        }
+      );
+
+      drawNormalizedLandmarksAsDots(
+        canvasCtx,
+        results.poseLandmarks,
+        mapX,
+        mapY,
+        {
+          color: "#FF0000",
+          radius: 4,
+        }
       );
 
       const LANDMARK_NAMES = [
@@ -152,6 +230,21 @@ export function initMediaPipe(
 
       frameCount++;
     }
+
+    if (results.faceLandmarks?.length) {
+      drawNormalizedLandmarksAsDots(
+        canvasCtx,
+        results.faceLandmarks,
+        mapX,
+        mapY,
+        {
+          color: "#00B0FF",
+          radius: 1.5,
+        }
+      );
+    }
+
+    canvasCtx.restore();
   });
 
   const tick = async () => {
