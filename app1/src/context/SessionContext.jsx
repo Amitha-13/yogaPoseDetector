@@ -32,7 +32,8 @@ const defaultConsentChecks = {
 export const SessionContextProvider = ({ children }) => {
   const [username, setUsernameState] = useState(() => {
     if (typeof localStorage === "undefined") return "";
-    return localStorage.getItem("yoga_username") || "";
+    const raw = localStorage.getItem("yoga_username");
+    return String(raw ?? "").trim();
   });
   const [sessionNumber, setSessionNumber] = useState(() => {
     if (typeof localStorage === "undefined") return 1;
