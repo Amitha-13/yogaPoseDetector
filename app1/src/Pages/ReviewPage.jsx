@@ -12,6 +12,9 @@ function ReviewPage() {
     sessionRecordings = [],
     metadata,
     participantId,
+    greeting,
+    username,
+    bumpSessionNumber,
     driveAccessToken,
     setDriveAccessToken,
   } = useSession();
@@ -224,6 +227,7 @@ function ReviewPage() {
     ) {
       return;
     }
+    bumpSessionNumber();
     window.location.href = "/login";
   };
 
@@ -342,6 +346,9 @@ function ReviewPage() {
     <div className="review-page">
       <header className="mb-4">
         <h1 className="h2 fw-bold">Session Review &amp; Upload</h1>
+        <p className="lead mb-1">
+          {greeting}, {username || metadata?.name || "participant"}
+        </p>
         <div className="d-flex flex-wrap align-items-center gap-2 mt-2">
           <span className="badge bg-dark font-monospace">{participantId}</span>
           <span className="text-muted small">

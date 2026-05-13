@@ -1,5 +1,6 @@
 import JSZip from "jszip";
 import CONFIG from "../config";
+import { buildFileNames, sanitizeToken } from "./sessionNaming";
 
 /**
  * @param {string} name
@@ -118,22 +119,8 @@ function uploadFileToDrive(
   });
 }
 
-function sanitizeFilePart(str) {
-  return String(str || "")
-    .replace(/[^a-zA-Z0-9-_]+/g, "_")
-    .replace(/_+/g, "_")
-    .replace(/^_|_$/g, "")
-    .slice(0, 80) || "pose";
-}
-
 function makeParticipantFolderName(name, participantId) {
-  const normalizedName = String(name || "")
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, "_")
-    .replace(/_+/g, "_")
-    .replace(/^_|_$/g, "");
-  const base = normalizedName || sanitizeFilePart(participantId).toUpperCase();
+  const base = sanitizeToken(name || participantId).toUpperCase();
   const randomSuffix = String(Math.floor(Math.random() * 100000)).padStart(5, "0");
   return `${base}_${randomSuffix}`;
 }
@@ -146,27 +133,21 @@ function makeParticipantFolderName(name, participantId) {
  */
 async function createSessionZip(recording, metadata, participantId) {
   const zip = new JSZip();
-  const recDate = recording.recordedAt
-    ? new Date(recording.recordedAt)
-    : new Date();
-  const y = recDate.getFullYear();
-  const m = String(recDate.getMonth() + 1).padStart(2, "0");
-  const d = String(recDate.getDate()).padStart(2, "0");
-  const hh = String(recDate.getHours()).padStart(2, "0");
-  const mm = String(recDate.getMinutes()).padStart(2, "0");
-  const ss = String(recDate.getSeconds()).padStart(2, "0");
-  const ymd = `${y}${m}${d}`;
-  const hms = `${hh}${mm}${ss}`;
-
-  const safeName = sanitizeFilePart(recording.poseName);
-  const zipFileName = `${participantId}_S01_${recording.poseId}_${safeName}_${ymd}_${hms}.zip`;
+  const names = buildFileNames({
+    username: metadata?.username || metadata?.name || participantId,
+    sessionNumber: metadata?.sessionNumber ?? 1,
+    recordedAt: recording.recordedAt || new Date().toISOString(),
+    category: recording.category || "general",
+    asanaName: recording.poseName,
+  });
+  const zipFileName = names.zip;
 
   if (recording.videoBlob && recording.videoBlob.size > 0) {
-    zip.file("video.webm", recording.videoBlob);
+    zip.file(names.video, recording.videoBlob);
   }
 
   zip.file(
-    "imu_data.json",
+    names.imu,
     JSON.stringify(
       {
         participantId,
@@ -180,8 +161,25 @@ async function createSessionZip(recording, metadata, participantId) {
     )
   );
 
+  if (Array.isArray(recording.fsrPackets)) {
+    zip.file(
+      names.fsr,
+      JSON.stringify(
+        {
+          participantId,
+          poseName: recording.poseName,
+          poseId: recording.poseId,
+          recordedAt: recording.recordedAt,
+          packets: recording.fsrPackets,
+        },
+        null,
+        2
+      )
+    );
+  }
+
   zip.file(
-    "landmarks.json",
+    names.landmarks,
     JSON.stringify(
       {
         participantId,
@@ -199,13 +197,15 @@ async function createSessionZip(recording, metadata, participantId) {
   );
 
   zip.file(
-    "metadata.json",
+    names.metadata,
     JSON.stringify(
       {
         participantId,
         poseName: recording.poseName,
         poseId: recording.poseId,
         sanskrit: recording.sanskrit,
+        category: recording.category || "general",
+        variation: recording.variation || "",
         duration: recording.duration,
         recordedAt: recording.recordedAt,
         skipped: recording.skipped,
@@ -267,7 +267,7 @@ export async function uploadSession(
       accessToken
     );
     sessionFolderId = await createDriveFolder(
-      `${today}_Session01`,
+      `${today}_session${String(metadata?.sessionNumber ?? 1).padStart(2, "0")}`,
       participantFolderId,
       accessToken
     );
@@ -286,7 +286,7 @@ export async function uploadSession(
       continue;
     }
 
-    const key = uploadKey(participantId, recording.poseId);
+    const key = uploadKey(participantId, `${recording.poseId}_${recording.recordedAt || ""}`);
     if (typeof localStorage !== "undefined" && localStorage.getItem(key)) {
       onProgress(index, 100, "already_uploaded");
       results.push({
@@ -358,7 +358,13 @@ export async function uploadSession(
     const summaryBlob = new Blob([JSON.stringify(summary, null, 2)], {
       type: "application/json",
     });
-    const summaryName = `${participantId}_session_summary.json`;
+    const summaryName = buildFileNames({
+      username: metadata?.username || metadata?.name || participantId,
+      sessionNumber: metadata?.sessionNumber ?? 1,
+      recordedAt: new Date().toISOString(),
+      category: "all",
+      asanaName: "summary",
+    }).summary;
 
     try {
       await uploadFileToDrive(

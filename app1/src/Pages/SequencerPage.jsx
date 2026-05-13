@@ -132,6 +132,7 @@ function SequencerPage() {
   const [getReadyCountdown, setGetReadyCountdown] = useState(3);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [confirmRerecordIndex, setConfirmRerecordIndex] = useState(null);
+  const [categoryFilter, setCategoryFilter] = useState("All");
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -210,6 +211,17 @@ function SequencerPage() {
   const recordedCount = POSES.filter((p) =>
     isPoseRecorded(p.name)
   ).length;
+  const categories = ["All", "Standing", "Sitting", "Prone", "Supine"];
+  const visiblePoses =
+    categoryFilter === "All"
+      ? POSES
+      : POSES.filter((p) => p.category === categoryFilter);
+  const groupedVisiblePoses = visiblePoses.reduce((acc, pose, globalIndex) => {
+    const poseIndex = POSES.findIndex((p) => p.id === pose.id);
+    if (!acc[pose.category]) acc[pose.category] = [];
+    acc[pose.category].push({ pose, poseIndex, globalIndex });
+    return acc;
+  }, {});
 
   const upsertSessionRecording = useCallback(
     (entry) => {
@@ -388,7 +400,7 @@ function SequencerPage() {
     if (poseIndex == null) return;
 
     const pose = POSES[poseIndex];
-    const duration = RECORDING_DURATION_SEC;
+    const duration = pose.duration || RECORDING_DURATION_SEC;
 
     let cancelled = false;
 
@@ -407,7 +419,19 @@ function SequencerPage() {
             videoRef.current,
             canvasRef.current,
             (frameData) => landmarkBufferRef.current.push(frameData),
-            tZeroRef.current
+            tZeroRef.current,
+            (rawLandmarks) => {
+              const ws = wsRef.current;
+              if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(
+                  JSON.stringify({
+                    timestamp: Date.now(),
+                    poseIndex,
+                    landmarks: rawLandmarks,
+                  })
+                );
+              }
+            }
           );
         } catch {
           /* MediaPipe CDN may be blocked */
@@ -469,6 +493,8 @@ function SequencerPage() {
         poseIndex,
         poseName: pose.name,
         sanskrit: pose.sanskrit,
+        category: pose.category,
+        variation: pose.variation || "",
         videoBlob,
         imuPackets: poseIMU,
         landmarks: poseLandmarks,
@@ -490,8 +516,6 @@ function SequencerPage() {
 
     return () => {
       cancelled = true;
-
-      videoReadyAbort?.abort();
 
       cancelAnimationFrame(initHandle);
 
@@ -595,7 +619,7 @@ function SequencerPage() {
           <div className="sequencer-select-header px-3">
             <div />
             <div className="sequencer-counter">
-              {recordedCount} of 10 poses recorded
+              {recordedCount} of {POSES.length} poses recorded
             </div>
           </div>
 
@@ -611,29 +635,54 @@ function SequencerPage() {
             <p className="sequencer-participant-id">{participantId}</p>
           </div>
 
-          <div className="row g-4 px-3">
-            {POSES.map((p, i) => {
-              const recorded = isPoseRecorded(
-                p.name
-              );
+          <div className="sequencer-filter-row px-3">
+            {categories.map((cat) => (
+              <button
+                key={cat}
+                type="button"
+                className={`sequencer-filter-btn${categoryFilter === cat ? " active" : ""}`}
+                onClick={() => setCategoryFilter(cat)}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
 
-              return (
-                <button
-                  key={p.id}
-                  type="button"
-                  className={`sequencer-pose-card${recorded ? " sequencer-pose-card-recorded" : ""}`}
-                  onClick={() => handlePoseCardClick(i)}
-                >
-                  <span className="sequencer-pose-card-name">{p.name}</span>
-                  <span className="sequencer-pose-card-sanskrit">{p.sanskrit}</span>
-                  <span
-                    className={`sequencer-badge${recorded ? " sequencer-badge-recorded" : " sequencer-badge-pending"}`}
-                  >
-                    {recorded ? "Recorded ✓" : "Not recorded"}
-                  </span>
-                </button>
-              );
-            })}
+          <div className="sequencer-category-sections px-3">
+            {Object.entries(groupedVisiblePoses).map(([category, items]) => (
+              <section key={category} className="sequencer-category-section">
+                <h3 className="sequencer-category-title">{category} Poses</h3>
+                <div className="sequencer-pose-grid">
+                  {items.map(({ pose, poseIndex }) => {
+                    const recorded = isPoseRecorded(pose.name);
+                    return (
+                      <button
+                        key={pose.id}
+                        type="button"
+                        className={`sequencer-pose-card${
+                          recorded ? " sequencer-pose-card-recorded" : ""
+                        }`}
+                        onClick={() => handlePoseCardClick(poseIndex)}
+                      >
+                        <span className="sequencer-pose-card-name">{pose.name}</span>
+                        <span className="sequencer-pose-card-sanskrit">{pose.sanskrit}</span>
+                        <span className="sequencer-pose-meta">
+                          {pose.id} · {pose.duration}s
+                          {pose.variation ? ` · ${pose.variation}` : ""}
+                        </span>
+                        <span
+                          className={`sequencer-badge${
+                            recorded ? " sequencer-badge-recorded" : " sequencer-badge-pending"
+                          }`}
+                        >
+                          {recorded ? "Recorded ✓" : "Not recorded"}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            ))}
           </div>
 
           <div className="sequencer-select-footer mt-5">

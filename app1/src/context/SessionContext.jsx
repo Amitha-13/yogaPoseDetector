@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useMemo, useState } from "react";
 import { v4 as uuidv4 } from "uuid";
+import { getGreetingByTime } from "../utils/sessionNaming";
 
 const SessionContext = createContext(null);
 
@@ -9,6 +10,8 @@ const defaultOperatorInfo = {
 };
 
 const defaultMetadata = {
+  username: "",
+  sessionNumber: 1,
   name: "",
   age: "",
   gender: "",
@@ -27,6 +30,15 @@ const defaultConsentChecks = {
 };
 
 export const SessionContextProvider = ({ children }) => {
+  const [username, setUsernameState] = useState(() => {
+    if (typeof localStorage === "undefined") return "";
+    return localStorage.getItem("yoga_username") || "";
+  });
+  const [sessionNumber, setSessionNumber] = useState(() => {
+    if (typeof localStorage === "undefined") return 1;
+    const raw = Number(localStorage.getItem("yoga_session_number") || 1);
+    return Number.isFinite(raw) && raw > 0 ? raw : 1;
+  });
   const [operatorInfo, setOperatorInfo] = useState(defaultOperatorInfo);
   const [participantId] = useState(() => uuidv4());
   const [metadata, setMetadata] = useState(defaultMetadata);
@@ -38,12 +50,36 @@ export const SessionContextProvider = ({ children }) => {
   const [cameraStream, setCameraStream] = useState(null);
 
   const consentGiven = Object.values(consentChecks).every(Boolean);
+  const greeting = getGreetingByTime();
+
+  const setUsername = (value) => {
+    const trimmed = String(value || "").trim();
+    setUsernameState(trimmed);
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem("yoga_username", trimmed);
+    }
+  };
+
+  const bumpSessionNumber = () => {
+    setSessionNumber((prev) => {
+      const next = prev + 1;
+      if (typeof localStorage !== "undefined") {
+        localStorage.setItem("yoga_session_number", String(next));
+      }
+      return next;
+    });
+  };
 
   const value = useMemo(
     () => ({
       operatorInfo,
       setOperatorInfo,
+      username,
+      setUsername,
+      greeting,
       participantId,
+      sessionNumber,
+      bumpSessionNumber,
       metadata,
       setMetadata,
       consentChecks,
@@ -63,6 +99,9 @@ export const SessionContextProvider = ({ children }) => {
     [
       operatorInfo,
       participantId,
+      username,
+      sessionNumber,
+      greeting,
       metadata,
       consentChecks,
       consentGiven,

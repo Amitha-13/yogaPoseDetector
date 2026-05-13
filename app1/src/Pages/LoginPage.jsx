@@ -5,17 +5,22 @@ import "./LoginPage.css";
 
 const LoginPage = () => {
   const navigate = useNavigate();
-  const { setOperatorInfo } = useSession();
+  const { username, setUsername, greeting, setOperatorInfo } = useSession();
   const [operatorName, setOperatorName] = useState("");
   const [institutionName, setInstitutionName] = useState("");
+  const [usernameInput, setUsernameInput] = useState(username || "");
 
   const nowText = useMemo(() => new Date().toLocaleString(), []);
-  const isValid = operatorName.trim() !== "" && institutionName.trim() !== "";
+  const isValid =
+    usernameInput.trim() !== "" &&
+    operatorName.trim() !== "" &&
+    institutionName.trim() !== "";
 
   const handleSubmit = (event) => {
     event.preventDefault();
     if (!isValid) return;
 
+    setUsername(usernameInput.trim());
     setOperatorInfo({
       operatorName: operatorName.trim(),
       institutionName: institutionName.trim(),
@@ -27,7 +32,24 @@ const LoginPage = () => {
     <div className="login-page">
       <form className="login-card" onSubmit={handleSubmit}>
         <h1 className="login-title">Yoga Posture Data Collection</h1>
+        <p className="login-greeting">
+          {greeting}
+          {username ? `, ${username}` : ""}
+        </p>
         <p className="login-datetime">{nowText}</p>
+
+        <label className="field-label" htmlFor="username">
+          Participant Username
+        </label>
+        <input
+          id="username"
+          className="field-input"
+          type="text"
+          value={usernameInput}
+          onChange={(event) => setUsernameInput(event.target.value)}
+          placeholder="e.g. meera"
+          required
+        />
 
         <label className="field-label" htmlFor="operatorName">
           Operator Name

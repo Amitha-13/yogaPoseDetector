@@ -1,121 +1,111 @@
 .sequencer-fullscreen {
   min-height: 100vh;
-  background: #f8f9fa;
-  color: #212529;
+  background: #f8fafc;
+  color: #111827;
   display: flex;
   flex-direction: column;
 }
 
-<<<<<<< HEAD
 .sequencer-padding {
   padding: 24px;
 }
 
 .sequencer-alert {
   padding: 16px 20px;
-  border-radius: 8px;
-  max-width: 560px;
+  border-radius: 10px;
+  max-width: 640px;
 }
 
 .sequencer-alert-danger {
-  background: rgba(185, 28, 28, 0.25);
-  border: 1px solid #dc2626;
-  color: #fecaca;
+  color: #7f1d1d;
+  background: #fee2e2;
+  border: 1px solid #fecaca;
 }
-
-/* ----- Pose selection (VIEW 1) ----- */
 
 .sequencer-select-view {
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 24px 24px 32px;
-  max-width: 1100px;
-  margin: 0 auto;
   width: 100%;
-  box-sizing: border-box;
-=======
-.sequencer-select-view {
-  padding: 2rem 0;
->>>>>>> b6d83053e9b3288e51252cf3b32388035fe7dbbf
 }
 
 .sequencer-select-header {
   display: flex;
   justify-content: space-between;
-<<<<<<< HEAD
-  align-items: flex-start;
-  gap: 16px;
+  margin-bottom: 12px;
 }
 
 .sequencer-counter {
-  font-size: 0.95rem;
+  font-size: clamp(0.95rem, 2vw, 1.05rem);
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.85);
-  white-space: nowrap;
-=======
-  align-items: center;
-  margin-bottom: 2rem;
-}
-
-.sequencer-counter {
-  font-weight: 600;
-  color: #6c757d;
->>>>>>> b6d83053e9b3288e51252cf3b32388035fe7dbbf
+  color: #475569;
 }
 
 .sequencer-select-intro {
   text-align: center;
-<<<<<<< HEAD
-  margin-bottom: 28px;
+  margin-bottom: 20px;
 }
 
 .sequencer-heading {
-  font-size: 1.75rem;
-  font-weight: 700;
   margin: 0 0 10px;
-  line-height: 1.2;
+  font-size: clamp(1.6rem, 3.6vw, 2.3rem);
+  font-weight: 700;
+  color: #0f172a;
 }
 
 .sequencer-subheading {
-  font-size: 1rem;
-  color: rgba(255, 255, 255, 0.55);
-  margin: 0 0 12px;
-  line-height: 1.5;
-  max-width: 520px;
-  margin-left: auto;
-  margin-right: auto;
+  margin: 0 auto 10px;
+  color: #475569;
+  font-size: clamp(1rem, 2vw, 1.1rem);
+  max-width: 640px;
 }
 
 .sequencer-participant-id {
-  font-family: ui-monospace, "Cascadia Code", "Consolas", monospace;
-  font-size: 0.8rem;
-  color: rgba(255, 255, 255, 0.4);
   margin: 0;
-  word-break: break-all;
-=======
-  margin-bottom: 3rem;
+  font-size: 0.9rem;
+  color: #64748b;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-.sequencer-heading {
-  font-size: 2.5rem;
+.sequencer-filter-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.sequencer-filter-btn {
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background: #fff;
+  color: #334155;
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+
+.sequencer-filter-btn.active {
+  background: #0f766e;
+  color: #fff;
+  border-color: #0f766e;
+}
+
+.sequencer-category-section {
+  margin-bottom: 18px;
+}
+
+.sequencer-category-title {
+  font-size: 1.05rem;
   font-weight: 700;
-  margin-bottom: 0.5rem;
-}
-
-.sequencer-subheading {
-  color: #6c757d;
-  font-size: 1.1rem;
->>>>>>> b6d83053e9b3288e51252cf3b32388035fe7dbbf
+  margin-bottom: 10px;
+  color: #0f172a;
 }
 
 .sequencer-pose-grid {
   display: grid;
-<<<<<<< HEAD
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 16px;
-  flex: 1;
-  align-content: start;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
 }
 
 .sequencer-pose-card {
@@ -123,178 +113,105 @@
   flex-direction: column;
   align-items: flex-start;
   text-align: left;
-  padding: 18px 16px;
+  gap: 4px;
   border-radius: 12px;
-  border: 1px solid #333;
-  background: #141414;
-  color: inherit;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  padding: 14px 14px;
   cursor: pointer;
-  transition:
-    border-color 0.2s,
-    background 0.2s,
-    transform 0.15s;
-  font: inherit;
+  transition: all 0.18s ease;
 }
 
 .sequencer-pose-card:hover {
-  border-color: #555;
-  background: #1a1a1a;
-  transform: translateY(-2px);
-}
-
-.sequencer-pose-card:focus-visible {
-  outline: 2px solid #f59e0b;
-  outline-offset: 2px;
+  border-color: #0ea5e9;
+  box-shadow: 0 6px 16px rgba(2, 132, 199, 0.15);
+  transform: translateY(-1px);
 }
 
 .sequencer-pose-card-recorded {
-  border-color: rgba(29, 158, 117, 0.45);
+  border-left: 4px solid #16a34a;
 }
 
 .sequencer-pose-card-name {
-  font-size: 1.15rem;
+  font-size: clamp(1rem, 2.2vw, 1.15rem);
   font-weight: 700;
-  margin-bottom: 6px;
-  line-height: 1.25;
+  color: #0f172a;
 }
 
 .sequencer-pose-card-sanskrit {
-  font-size: 0.85rem;
+  font-size: clamp(0.92rem, 2vw, 1rem);
   font-style: italic;
-  opacity: 0.65;
-  margin-bottom: 12px;
-=======
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 1.5rem;
-  margin-bottom: 3rem;
+  color: #334155;
 }
 
-.sequencer-pose-card {
-  background: white;
-  border: 1px solid #dee2e6;
-  border-radius: 12px;
-  padding: 1.5rem;
-  text-align: left;
-  transition: all 0.2s ease-in-out;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
-}
-
-.sequencer-pose-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
-  border-color: #0d6efd;
-}
-
-.sequencer-pose-card-recorded {
-  border-left: 4px solid #198754;
-}
-
-.sequencer-pose-card-name {
-  font-size: 1.25rem;
-  font-weight: 600;
-  display: block;
-}
-
-.sequencer-pose-card-sanskrit {
-  font-size: 1rem;
-  color: #6c757d;
-  font-style: italic;
-  display: block;
->>>>>>> b6d83053e9b3288e51252cf3b32388035fe7dbbf
+.sequencer-pose-meta {
+  font-size: 0.82rem;
+  color: #64748b;
 }
 
 .sequencer-badge {
+  margin-top: 6px;
   display: inline-block;
-<<<<<<< HEAD
-  font-size: 0.72rem;
+  font-size: 0.73rem;
   font-weight: 700;
-  text-transform: uppercase;
   letter-spacing: 0.04em;
-  padding: 4px 10px;
+  text-transform: uppercase;
   border-radius: 999px;
-}
-
-.sequencer-badge-pending {
-  background: #333;
-  color: rgba(255, 255, 255, 0.65);
+  padding: 4px 9px;
 }
 
 .sequencer-badge-recorded {
-  background: rgba(29, 158, 117, 0.25);
-  color: #4ade80;
-  border: 1px solid rgba(74, 222, 128, 0.35);
+  background: #dcfce7;
+  color: #166534;
+}
+
+.sequencer-badge-pending {
+  background: #e2e8f0;
+  color: #334155;
 }
 
 .sequencer-select-footer {
-  margin-top: 32px;
+  margin-top: 22px;
   display: flex;
   justify-content: center;
 }
 
 .sequencer-btn {
-  font: inherit;
-  cursor: pointer;
-  border-radius: 8px;
   border: none;
-  padding: 10px 18px;
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-size: 0.98rem;
   font-weight: 600;
-  transition: opacity 0.15s, background 0.15s;
-}
-
-.sequencer-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
+  cursor: pointer;
 }
 
 .sequencer-btn-primary {
   background: #2563eb;
-  color: white;
-}
-
-.sequencer-btn-primary:hover:not(:disabled) {
-  background: #1d4ed8;
+  color: #fff;
 }
 
 .sequencer-btn-secondary {
-  background: #333;
-  color: #eee;
-}
-
-.sequencer-btn-secondary:hover {
-  background: #444;
+  background: #e2e8f0;
+  color: #1e293b;
 }
 
 .sequencer-btn-finish {
-  background: linear-gradient(135deg, #1d9e75, #0d8a60);
-  color: white;
-  padding: 14px 28px;
-  font-size: 1.05rem;
-}
-
-.sequencer-btn-finish:hover:not(:disabled) {
-  filter: brightness(1.08);
+  background: #16a34a;
+  color: #fff;
+  font-size: 1.02rem;
+  padding: 13px 24px;
 }
 
 .sequencer-btn-back {
-  background: rgba(255, 255, 255, 0.1);
-  color: white;
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(15, 23, 42, 0.75);
+  color: #fff;
 }
-
-.sequencer-btn-back:hover {
-  background: rgba(255, 255, 255, 0.18);
-}
-
-/* ----- Re-record dialog ----- */
 
 .sequencer-dialog-overlay {
   position: fixed;
   inset: 0;
   z-index: 100;
-  background: rgba(0, 0, 0, 0.65);
+  background: rgba(2, 6, 23, 0.65);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -302,20 +219,16 @@
 }
 
 .sequencer-dialog {
-  background: #1a1a1a;
-  border: 1px solid #444;
+  background: #fff;
   border-radius: 12px;
   padding: 24px;
-  max-width: 400px;
+  max-width: 420px;
   width: 100%;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
 }
 
 .sequencer-dialog-text {
-  margin: 0 0 20px;
+  margin: 0 0 18px;
   font-size: 1rem;
-  line-height: 1.5;
-  color: rgba(255, 255, 255, 0.9);
 }
 
 .sequencer-dialog-actions {
@@ -324,14 +237,10 @@
   justify-content: flex-end;
 }
 
-/* ----- Recording (VIEW 2) ----- */
-
 .sequencer-record-root {
   position: relative;
   flex: 1;
   min-height: 100vh;
-  display: flex;
-  flex-direction: column;
 }
 
 .sequencer-video-wrap {
@@ -345,7 +254,6 @@
   position: fixed;
   inset: 0;
   min-height: 100vh;
-  z-index: 0;
 }
 
 .sequencer-video-preview {
@@ -356,88 +264,11 @@
 }
 
 .sequencer-video-bg {
-=======
-  padding: 0.25em 0.6em;
-  font-size: 0.75em;
-  font-weight: 700;
-  line-height: 1;
-  text-align: center;
-  white-space: nowrap;
-  vertical-align: baseline;
-  border-radius: 0.375rem;
-  width: fit-content;
-}
-
-.sequencer-badge-recorded {
-  background-color: #d1e7dd;
-  color: #0f5132;
-}
-
-.sequencer-badge-pending {
-  background-color: #f8f9fa;
-  color: #6c757d;
-  border: 1px solid #dee2e6;
-}
-
-.sequencer-select-footer {
-  display: flex;
-  justify-content: center;
-  padding-top: 2rem;
-  border-top: 1px solid #dee2e6;
-}
-
-.sequencer-btn {
-  padding: 0.75rem 1.5rem;
-  font-weight: 600;
-  border-radius: 8px;
-  transition: all 0.2s;
-  border: none;
-}
-
-.sequencer-btn-primary {
-  background-color: #0d6efd;
-  color: white;
-}
-
-.sequencer-btn-primary:hover {
-  background-color: #0b5ed7;
-}
-
-.sequencer-btn-finish {
-  background-color: #198754;
-  color: white;
-  font-size: 1.1rem;
-  padding: 1rem 2.5rem;
-}
-
-.sequencer-btn-finish:hover:not(:disabled) {
-  background-color: #157347;
-}
-
-.sequencer-btn-finish:disabled {
-  opacity: 0.65;
-  cursor: not-allowed;
-}
-
-/* Recording Styles */
-.sequencer-record-root {
-  flex: 1;
-  position: relative;
-  background: #000;
-  overflow: hidden;
-}
-
-.sequencer-video-wrap {
->>>>>>> b6d83053e9b3288e51252cf3b32388035fe7dbbf
   position: absolute;
-  top: 0;
-  left: 0;
+  inset: 0;
   width: 100%;
   height: 100%;
-<<<<<<< HEAD
   object-fit: cover;
-  opacity: 1;
-  /* Canvas composites the same frames on top when MediaPipe runs; if Pose fails to load, video stays visible */
 }
 
 .sequencer-canvas-hidden {
@@ -446,16 +277,6 @@
   height: 1px;
   opacity: 0;
   pointer-events: none;
-  left: 0;
-  top: 0;
-=======
-}
-
-.sequencer-video-bg {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
->>>>>>> b6d83053e9b3288e51252cf3b32388035fe7dbbf
 }
 
 .sequencer-canvas-overlay {
@@ -464,141 +285,66 @@
   left: 0;
   width: 100%;
   height: 100%;
-<<<<<<< HEAD
   pointer-events: none;
 }
 
 .sequencer-record-overlay {
   position: relative;
   z-index: 1;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  padding: 16px 20px 28px;
-  min-height: 0;
-}
-
-.sequencer-record-overlay-full {
   min-height: 100vh;
-  box-sizing: border-box;
-  justify-content: flex-start;
+  padding: 16px 20px 28px;
+  color: #fff;
 }
 
 .sequencer-record-top {
   margin-bottom: 8px;
-  align-self: flex-start;
-  padding: 8px 12px;
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(6px);
-=======
-  z-index: 5;
-}
-
-.sequencer-record-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 10;
-  background: rgba(0, 0, 0, 0.4);
-  display: flex;
-  flex-direction: column;
-  color: white;
-  padding: 2rem;
-}
-
-.sequencer-record-top {
-  display: flex;
-  justify-content: flex-start;
-}
-
-.sequencer-btn-back {
-  background: rgba(255, 255, 255, 0.2);
-  color: white;
-  backdrop-filter: blur(4px);
->>>>>>> b6d83053e9b3288e51252cf3b32388035fe7dbbf
 }
 
 .sequencer-record-title-block {
   text-align: center;
-<<<<<<< HEAD
   margin-bottom: 16px;
 }
 
 .sequencer-heading-record {
-  font-size: 2rem;
+  font-size: clamp(1.6rem, 4vw, 2.3rem);
   font-weight: 700;
   margin: 0 0 6px;
-  text-shadow: 0 2px 16px rgba(0, 0, 0, 0.85);
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.7);
 }
 
 .sequencer-sanskrit-record {
-  font-size: 1.1rem;
+  font-size: clamp(1rem, 2.5vw, 1.2rem);
   font-style: italic;
-  opacity: 0.65;
-  margin: 0;
-  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.85);
-=======
-  margin-top: 2rem;
-}
-
-.sequencer-heading-record {
-  font-size: 3rem;
-  font-weight: 800;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
-}
-
-.sequencer-sanskrit-record {
-  font-size: 1.5rem;
   opacity: 0.8;
-  font-style: italic;
->>>>>>> b6d83053e9b3288e51252cf3b32388035fe7dbbf
+  margin: 0;
 }
 
 .sequencer-phase-block {
-  flex: 1;
+  min-height: 52vh;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-<<<<<<< HEAD
   text-align: center;
-  padding: 24px 16px;
+  padding: 18px 16px;
 }
 
 .sequencer-get-ready-msg {
-  font-size: 1.15rem;
-  color: rgba(255, 255, 255, 0.75);
-  margin: 0 0 24px;
-  max-width: 360px;
+  font-size: clamp(1rem, 2.5vw, 1.2rem);
+  margin: 0 0 18px;
 }
 
 .sequencer-countdown-number {
-  font-size: 7rem;
+  font-size: clamp(4rem, 12vw, 7rem);
   font-weight: 900;
   color: #f59e0b;
   line-height: 1;
-  animation: sequencer-pop-in 0.3s ease-out;
-}
-
-@keyframes sequencer-pop-in {
-  0% {
-    transform: scale(1.35);
-    opacity: 0;
-  }
-  100% {
-    transform: scale(1);
-    opacity: 1;
-  }
 }
 
 .sequencer-recording-ui {
-  flex: 1;
+  min-height: 52vh;
   display: flex;
   flex-direction: column;
-  min-height: 200px;
 }
 
 .sequencer-rec-top {
@@ -611,59 +357,21 @@
   align-items: center;
   gap: 6px;
   background: rgba(220, 38, 38, 0.92);
-=======
-}
-
-.sequencer-get-ready-msg {
-  font-size: 1.5rem;
-  margin-bottom: 2rem;
-}
-
-.sequencer-countdown-number {
-  font-size: 10rem;
-  font-weight: 900;
-  color: #ffc107;
-  text-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
-}
-
-.sequencer-recording-ui {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-}
-
-.sequencer-rec-top {
-  display: flex;
-  justify-content: flex-end;
-}
-
-.sequencer-rec-badge {
-  background: #dc3545;
->>>>>>> b6d83053e9b3288e51252cf3b32388035fe7dbbf
-  color: white;
-  padding: 0.5rem 1rem;
-  border-radius: 50px;
+  color: #fff;
+  padding: 7px 12px;
+  border-radius: 999px;
   font-weight: 700;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
 }
 
 .sequencer-rec-dot {
-<<<<<<< HEAD
   width: 10px;
   height: 10px;
-=======
-  width: 12px;
-  height: 12px;
->>>>>>> b6d83053e9b3288e51252cf3b32388035fe7dbbf
-  background: white;
+  background: #fff;
   border-radius: 50%;
   animation: sequencer-blink 1s infinite;
 }
 
 @keyframes sequencer-blink {
-<<<<<<< HEAD
   0%,
   100% {
     opacity: 1;
@@ -681,121 +389,28 @@
   text-align: center;
   padding: 14px 18px 16px;
   border-radius: 12px;
-  background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(8px);
+  background: rgba(0, 0, 0, 0.58);
   max-width: min(440px, 100%);
   margin: 0 auto;
-  box-sizing: border-box;
 }
 
 .sequencer-rec-label {
   margin: 0 0 6px;
-  font-weight: 600;
   font-size: 1rem;
+  font-weight: 600;
 }
 
 .sequencer-rec-remaining {
   margin: 0 0 12px;
-  font-size: 0.9rem;
-  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.95rem;
 }
 
 .sequencer-recording-progress {
-  height: 8px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.12);
+  height: 9px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.18);
   overflow: hidden;
   width: 100%;
-  max-width: 400px;
-  margin: 0 auto;
-=======
-  0% { opacity: 1; }
-  50% { opacity: 0; }
-  100% { opacity: 1; }
-}
-
-.sequencer-rec-bottom {
-  margin-top: auto;
-  text-align: center;
-  background: rgba(0, 0, 0, 0.6);
-  padding: 2rem;
-  border-radius: 16px;
-  backdrop-filter: blur(8px);
-}
-
-.sequencer-recording-progress {
-  height: 12px;
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 6px;
-  overflow: hidden;
-  margin-top: 1rem;
-}
-
-.sequencer-recording-progress-fill {
-  height: 100%;
-  background: #dc3545;
-  transition: width 0.2s linear;
-}
-
-.sequencer-dialog-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.sequencer-dialog {
-  background: white;
-  padding: 2rem;
-  border-radius: 12px;
-  max-width: 400px;
-  width: 90%;
-  text-align: center;
-}
-
-.sequencer-dialog-text {
-  font-size: 1.25rem;
-  margin-bottom: 2rem;
-  color: #212529;
-}
-
-.sequencer-dialog-actions {
-  display: flex;
-  gap: 1rem;
-  justify-content: center;
-}
-
-.sequencer-saved-banner {
-  background: #198754;
-  color: white;
-  padding: 2rem 4rem;
-  border-radius: 50px;
-  font-size: 2rem;
-  font-weight: 700;
-}
-
-.sequencer-padding {
-  padding: 2rem;
-}
-
-.sequencer-alert {
-  padding: 1rem 1.5rem;
-  margin-bottom: 1rem;
-  border: 1px solid transparent;
-  border-radius: 0.375rem;
-}
-
-.sequencer-alert-danger {
-  color: #842029;
-  background-color: #f8d7da;
-  border-color: #f5c2c7;
->>>>>>> b6d83053e9b3288e51252cf3b32388035fe7dbbf
 }
 
 .sequencer-recording-progress-fill {
@@ -815,38 +430,37 @@
   font-size: 1.15rem;
 }
 
-@media (min-width: 768px) {
-  .sequencer-pose-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
-}
-
-@media (min-width: 900px) {
-  .sequencer-heading {
-    font-size: 2rem;
-  }
-}
-
 .pose-category-label {
   font-size: 0.9rem;
   font-weight: 600;
   letter-spacing: 2px;
   text-transform: uppercase;
-  opacity: 0.6;
+  opacity: 0.72;
   margin-bottom: 8px;
 }
 
 .pose-code {
-  font-size: 0.85rem;
+  font-size: 0.9rem;
   font-weight: 700;
   letter-spacing: 1px;
-  color: #00c853;
-  margin-bottom: 10px;
+  color: #22c55e;
+  margin-bottom: 8px;
+}
+
+.pose-name {
+  font-size: clamp(1.5rem, 4.2vw, 2.2rem);
+  font-weight: 800;
+}
+
+.pose-sanskrit {
+  font-size: clamp(1rem, 2.5vw, 1.2rem);
+  font-style: italic;
+  opacity: 0.86;
 }
 
 .pose-variation {
-  font-size: 0.85rem;
+  font-size: 0.9rem;
   font-style: italic;
-  opacity: 0.5;
+  opacity: 0.72;
   margin-top: 6px;
 }

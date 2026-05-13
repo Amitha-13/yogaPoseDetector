@@ -37,7 +37,8 @@ const validateField = (name, value) => {
 
 const MetadataPage = () => {
   const navigate = useNavigate();
-  const { operatorInfo, participantId, metadata, setMetadata } = useSession();
+  const { operatorInfo, participantId, metadata, setMetadata, username, greeting, sessionNumber } =
+    useSession();
   const [formData, setFormData] = useState(metadata);
   const [touched, setTouched] = useState({});
 
@@ -78,7 +79,12 @@ const MetadataPage = () => {
       return;
     }
 
-    setMetadata({ ...formData, sessionDate: formData.sessionDate || new Date().toLocaleString() });
+    setMetadata({
+      ...formData,
+      username,
+      sessionNumber,
+      sessionDate: formData.sessionDate || new Date().toLocaleString(),
+    });
     navigate("/consent");
   };
 
@@ -86,6 +92,9 @@ const MetadataPage = () => {
     <div className="metadata-page">
       <form className="metadata-card" onSubmit={onSubmit}>
         <div className="meta-top">
+          <div>
+            {greeting}, {username || "participant"}
+          </div>
           <div>
             Operator: {operatorInfo.operatorName} - {operatorInfo.institutionName}
           </div>
