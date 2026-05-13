@@ -7,6 +7,7 @@ import {
   getTZero,
 } from "../utils/recorder";
 import { initMediaPipe } from "../utils/mediapipeSetup";
+import CONFIG from "../config";
 import "./SequencerPage.css";
 
 const RECORDING_DURATION_SEC = 45;
@@ -124,6 +125,7 @@ function SequencerPage() {
     cameraStream,
     sessionRecordings,
     setSessionRecordings,
+    tZero: sessionTZero,
   } = useSession();
 
   const [view, setView] = useState("select");
@@ -368,7 +370,9 @@ function SequencerPage() {
 
       recordingStartRef.current = Date.now();
 
-      startRecording(streamRef.current);
+      startRecording(streamRef.current, {
+        sessionTZero: sessionTZero ?? undefined,
+      });
 
       setRecordPhase("recording");
     }, 3000);
@@ -384,6 +388,7 @@ function SequencerPage() {
     selectedPoseIndex,
     cameraStream,
     playStartCue,
+    sessionTZero,
   ]);
 
   useEffect(() => {
@@ -467,25 +472,17 @@ function SequencerPage() {
         ...landmarkBufferRef.current,
       ];
 
-      const {
-        videoBlob,
-        imuPackets,
-        tZero,
-      } = await stopRecording();
+      const { videoBlob, imuPackets } = await stopRecording();
 
-      const recordingStartTime =
-        recordingStartRef.current;
-
-      const poseStart =
-        recordingStartTime - tZero;
-
-      const poseEnd =
-        poseStart + duration * 1000;
+      const recordingStartTime = recordingStartRef.current;
+      const sessionTz = sessionTZero ?? recordingStartTime;
+      const poseStartRel = recordingStartTime - sessionTz;
+      const poseEndRel = poseStartRel + duration * 1000;
 
       const poseIMU = imuPackets.filter(
         (p) =>
-          p.relative_timestamp >= poseStart &&
-          p.relative_timestamp <= poseEnd
+          p.relative_timestamp >= poseStartRel &&
+          p.relative_timestamp <= poseEndRel
       );
 
       upsertSessionRecording({
@@ -498,10 +495,24 @@ function SequencerPage() {
         videoBlob,
         imuPackets: poseIMU,
         landmarks: poseLandmarks,
+        imuSource: "BNO08x_real_udp",
         frameCount: poseLandmarks.length,
         recordedAt: new Date().toISOString(),
         duration,
         skipped: false,
+        sensorConfig: {
+          totalSlots: CONFIG.TOTAL_SENSOR_COUNT,
+          activeSlots: CONFIG.ACTIVE_SENSOR_COUNT,
+          placeholderSlots:
+            CONFIG.TOTAL_SENSOR_COUNT - CONFIG.ACTIVE_SENSOR_COUNT,
+          activeSensorIds: CONFIG.SENSOR_SLOTS.filter((s) => s.status === "active").map(
+            (s) => s.id
+          ),
+          placeholderIds: CONFIG.SENSOR_SLOTS.filter(
+            (s) => s.status === "placeholder"
+          ).map((s) => s.id),
+          connectedDuring: Object.keys(imuPackets[0]?.devices || {}),
+        },
       });
 
       setRecordPhase("saved");
@@ -534,6 +545,7 @@ function SequencerPage() {
     recordPhase,
     cameraStream,
     upsertSessionRecording,
+    sessionTZero,
   ]);
 
   useEffect(() => {

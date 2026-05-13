@@ -10,4 +10,3 @@ backend/venv/
 # Python cache
 backend/__pycache__/
 *.pyc
-

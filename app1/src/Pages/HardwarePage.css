@@ -59,3 +59,103 @@
 .startup-row small {
   grid-column: 2;
 }
+
+.sensor-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.sensor-card {
+  border-radius: 10px;
+  padding: 12px;
+  border: 1.5px solid #dee2e6;
+  background: #ffffff;
+  transition: border-color 0.3s;
+}
+
+.sensor-card--live {
+  border-color: #1d9e75;
+  background: #f0fdf8;
+}
+
+.sensor-card--timeout {
+  border-color: #ef4444;
+  background: #fff5f5;
+}
+
+.sensor-card--placeholder {
+  border-color: #9ca3af;
+  background: #f9fafb;
+  opacity: 0.65;
+  border-style: dashed;
+}
+
+.sensor-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.sensor-id {
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: #1f2937;
+}
+
+.sensor-body-part {
+  font-size: 0.78rem;
+  color: #6b7280;
+  margin-bottom: 6px;
+}
+
+.sensor-data {
+  font-size: 0.8rem;
+  color: #374151;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sensor-placeholder-msg {
+  font-size: 0.75rem;
+  color: #9ca3af;
+  font-style: italic;
+}
+
+.sensor-timeout-msg {
+  font-size: 0.75rem;
+  color: #ef4444;
+}
+
+.badge-live {
+  background: #1d9e75;
+  color: #fff;
+}
+
+.badge-timeout {
+  background: #ef4444;
+  color: #fff;
+}
+
+.badge-placeholder {
+  background: #9ca3af;
+  color: #fff;
+}
+
+.badge-live,
+.badge-timeout,
+.badge-placeholder {
+  font-size: 0.7rem;
+  padding: 2px 8px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
+.sensor-summary {
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 8px 0;
+}

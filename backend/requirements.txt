@@ -2,3 +2,5 @@ fastapi
 uvicorn
 websockets
 zeroconf
+flask
+flask-cors

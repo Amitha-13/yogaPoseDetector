@@ -4,6 +4,12 @@ import CONFIG from "../config";
 import { useSession } from "../context/SessionContext";
 import { uploadSession } from "../utils/driveUpload";
 import { addToQueue } from "../utils/uploadQueue";
+import {
+  getReadyYogaRootHandle,
+  isLocalFolderPickerSupported,
+  LOCAL_YOGA_SUBDIR,
+  pickParentAndCreateYogaFolder,
+} from "../utils/localYogaFolder";
 import "./ReviewPage.css";
 
 function ReviewPage() {
@@ -28,9 +34,17 @@ function ReviewPage() {
   const [uploadResults, setUploadResults] = useState([]);
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [localYogaDirHandle, setLocalYogaDirHandle] = useState(null);
+  const [localFolderPhase, setLocalFolderPhase] = useState("loading");
+  const [localSaveMessage, setLocalSaveMessage] = useState(null);
 
   const uploadStartedRef = useRef(false);
   const folderInfoRef = useRef(null);
+  const localYogaDirHandleRef = useRef(null);
+
+  useEffect(() => {
+    localYogaDirHandleRef.current = localYogaDirHandle;
+  }, [localYogaDirHandle]);
 
   useEffect(() => {
     const on = () => setIsOnline(true);
@@ -40,6 +54,27 @@ function ReviewPage() {
     return () => {
       window.removeEventListener("online", on);
       window.removeEventListener("offline", off);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!isLocalFolderPickerSupported()) {
+        if (!cancelled) setLocalFolderPhase("unsupported");
+        return;
+      }
+      const h = await getReadyYogaRootHandle();
+      if (cancelled) return;
+      if (h) {
+        setLocalYogaDirHandle(h);
+        setLocalFolderPhase("ready");
+      } else {
+        setLocalFolderPhase("needPick");
+      }
+    })();
+    return () => {
+      cancelled = true;
     };
   }, []);
 
@@ -90,6 +125,14 @@ function ReviewPage() {
   const runUpload = useCallback(
     async (options = {}) => {
       setError(null);
+      setLocalSaveMessage(null);
+      const mergedOpts = {
+        ...options,
+        localYogaDirHandle:
+          options.localYogaDirHandle !== undefined
+            ? options.localYogaDirHandle
+            : localYogaDirHandleRef.current,
+      };
       try {
         const result = await uploadSession(
           sessionRecordings,
@@ -106,8 +149,22 @@ function ReviewPage() {
               },
             }));
           },
-          options
+          mergedOpts
         );
+
+        if (result.localSaveErrors?.length) {
+          setLocalSaveMessage(
+            `Some local copies failed: ${result.localSaveErrors.slice(0, 3).join("; ")}${
+              result.localSaveErrors.length > 3 ? "…" : ""
+            }`
+          );
+        } else if (mergedOpts.localYogaDirHandle) {
+          setLocalSaveMessage(
+            `ZIPs and session summary were saved under the “${LOCAL_YOGA_SUBDIR}” folder you chose.`
+          );
+        } else {
+          setLocalSaveMessage(null);
+        }
 
         folderInfoRef.current = {
           participantFolderId: result.participantFolderId,
@@ -140,13 +197,23 @@ function ReviewPage() {
         throw err;
       }
     },
-    [
-      sessionRecordings,
-      metadata,
-      participantId,
-      driveAccessToken,
-    ]
+    [sessionRecordings, metadata, participantId, driveAccessToken]
   );
+
+  const handleChooseLocalYogaFolder = useCallback(async () => {
+    setError(null);
+    try {
+      const h = await pickParentAndCreateYogaFolder();
+      setLocalYogaDirHandle(h);
+      setLocalFolderPhase("ready");
+      setLocalSaveMessage(
+        `Folder “${LOCAL_YOGA_SUBDIR}” is ready. The next upload will save ZIP files there as well as to Drive.`
+      );
+    } catch (e) {
+      if (e?.name === "AbortError") return;
+      setError(e?.message || String(e));
+    }
+  }, []);
 
   useEffect(() => {
     if (!isOnline || !driveAccessToken || sessionRecordings.length === 0) {
@@ -390,12 +457,55 @@ function ReviewPage() {
         </div>
       )}
 
+      {localFolderPhase === "unsupported" && (
+        <div className="alert alert-secondary" role="status">
+          Local folder backup uses a browser feature not available here (try Chrome or Edge).
+          Cloud upload still works.
+        </div>
+      )}
+
+      {localFolderPhase === "needPick" && isLocalFolderPickerSupported() && (
+        <div className="alert alert-primary d-flex flex-wrap align-items-center justify-content-between gap-2">
+          <span>
+            Choose where to keep a <strong>{LOCAL_YOGA_SUBDIR}</strong> folder on this PC. The
+            app creates it once; every upload saves the same ZIPs there and to Drive.
+          </span>
+          <button
+            type="button"
+            className="btn btn-light text-primary fw-semibold"
+            onClick={() => void handleChooseLocalYogaFolder()}
+          >
+            Choose folder for local saves…
+          </button>
+        </div>
+      )}
+
+      {localFolderPhase === "ready" && (
+        <div className="alert alert-success py-2 mb-3" role="status">
+          Local backup on: a <strong>{LOCAL_YOGA_SUBDIR}</strong> folder inside the directory you
+          selected. Uploads write ZIPs and the session summary there automatically.
+          <button
+            type="button"
+            className="btn btn-sm btn-outline-success ms-2"
+            onClick={() => void handleChooseLocalYogaFolder()}
+          >
+            Change location…
+          </button>
+        </div>
+      )}
+
+      {localSaveMessage && (
+        <div className="alert alert-light border small mb-3" role="status">
+          {localSaveMessage}
+        </div>
+      )}
+
       <div className="table-responsive bg-white rounded shadow-sm">
         <table className="table table-hover upload-table mb-0">
           <thead className="table-light">
             <tr>
               <th>Pose</th>
-              <th>Local</th>
+              <th>Local disk</th>
               <th>Frames</th>
               <th>Drive Upload</th>
               <th>Status</th>
@@ -410,7 +520,19 @@ function ReviewPage() {
                   <div className="small text-muted fst-italic">{r.sanskrit}</div>
                 </td>
                 <td>
-                  <span className="text-success">✓ Saved</span>
+                  {r.skipped ? (
+                    <span className="text-secondary">—</span>
+                  ) : localFolderPhase !== "ready" ? (
+                    <span className="text-muted small">Cloud only</span>
+                  ) : uploadProgress[i]?.status === "uploaded" ? (
+                    <span className="text-success small">✓ + disk</span>
+                  ) : uploadProgress[i]?.status === "already_uploaded" ? (
+                    <span className="text-muted small">Cloud only</span>
+                  ) : uploadProgress[i]?.status === "failed" ? (
+                    <span className="text-muted small">—</span>
+                  ) : (
+                    <span className="text-muted small">Pending</span>
+                  )}
                 </td>
                 <td>
                   {r.skipped

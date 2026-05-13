@@ -1,6 +1,7 @@
 import JSZip from "jszip";
 import CONFIG from "../config";
 import { buildFileNames, sanitizeToken } from "./sessionNaming";
+import { writeBlobToDirectory } from "./localYogaFolder";
 
 /**
  * @param {string} name
@@ -146,6 +147,27 @@ async function createSessionZip(recording, metadata, participantId) {
     zip.file(names.video, recording.videoBlob);
   }
 
+  const imuPackets = recording.imuPackets || [];
+
+  function devicesWithPlaceholders(frame) {
+    const live =
+      frame.devices && typeof frame.devices === "object" ? frame.devices : {};
+    const out = { ...live };
+    CONFIG.SENSOR_SLOTS.filter((s) => s.status === "placeholder").forEach(
+      (slot) => {
+        if (!(slot.id in out)) {
+          out[slot.id] = {
+            status: "placeholder",
+            bodyPart: slot.bodyPart,
+            data: null,
+            note: "Sensor not yet available. Will be populated in future sessions.",
+          };
+        }
+      }
+    );
+    return out;
+  }
+
   zip.file(
     names.imu,
     JSON.stringify(
@@ -154,7 +176,40 @@ async function createSessionZip(recording, metadata, participantId) {
         poseName: recording.poseName,
         poseId: recording.poseId,
         recordedAt: recording.recordedAt,
-        packets: recording.imuPackets || [],
+        imuSource: "BNO08x_real_udp",
+        sensor_configuration: {
+          total_slots: CONFIG.TOTAL_SENSOR_COUNT,
+          active_slots: CONFIG.ACTIVE_SENSOR_COUNT,
+          placeholder_slots:
+            CONFIG.TOTAL_SENSOR_COUNT - CONFIG.ACTIVE_SENSOR_COUNT,
+          slots: CONFIG.SENSOR_SLOTS.map((slot) => ({
+            id: slot.id,
+            bodyPart: slot.bodyPart,
+            status: slot.status,
+            hasData:
+              recording.sensorConfig?.connectedDuring?.includes(slot.id) ??
+              false,
+          })),
+        },
+        sensor_hardware: {
+          model: "Adafruit BNO08x",
+          reportType: "SH2_ARVR_STABILIZED_RV",
+          protocol: "UDP → Flask REST → React fetch",
+          fields: {
+            qr: "quaternion real",
+            qi: "quaternion i",
+            qj: "quaternion j",
+            qk: "quaternion k",
+            voltage: "battery V",
+            soc: "battery %",
+            rssi: "WiFi dBm",
+            relative_timestamp: "ms since tZero",
+          },
+        },
+        frames: imuPackets.map((frame) => ({
+          relative_timestamp: frame.relative_timestamp,
+          devices: devicesWithPlaceholders(frame),
+        })),
       },
       null,
       2
@@ -234,8 +289,8 @@ function sessionFolderLink(id) {
  * @param {string} participantId
  * @param {string} accessToken
  * @param {(poseIndex: number, percent: number, status: string) => void} onProgress
- * @param {{ resume?: { participantFolderId: string, sessionFolderId: string }, onlyIndices?: number[] }} [options]
- * @returns {Promise<{ sessionFolderId: string, sessionFolderLink: string, participantFolderId: string, results: object[] }>}
+ * @param {{ resume?: { participantFolderId: string, sessionFolderId: string }, onlyIndices?: number[], localYogaDirHandle?: FileSystemDirectoryHandle | null }} [options]
+ * @returns {Promise<{ sessionFolderId: string, sessionFolderLink: string, participantFolderId: string, results: object[], localSaveErrors: string[] }>}
  */
 export async function uploadSession(
   sessionRecordings,
@@ -245,7 +300,8 @@ export async function uploadSession(
   onProgress,
   options = {}
 ) {
-  const { resume, onlyIndices } = options;
+  const { resume, onlyIndices, localYogaDirHandle } = options;
+  const localSaveErrors = [];
   const indexFilter =
     onlyIndices != null && onlyIndices.length > 0
       ? new Set(onlyIndices)
@@ -254,6 +310,24 @@ export async function uploadSession(
   const results = [];
   let participantFolderId;
   let sessionFolderId;
+
+  async function saveLocalZip(zipBlob, zipFileName) {
+    if (!localYogaDirHandle) return;
+    try {
+      await writeBlobToDirectory(localYogaDirHandle, zipFileName, zipBlob);
+    } catch (e) {
+      localSaveErrors.push(`${zipFileName}: ${e?.message || String(e)}`);
+    }
+  }
+
+  async function saveLocalJson(blob, name) {
+    if (!localYogaDirHandle) return;
+    try {
+      await writeBlobToDirectory(localYogaDirHandle, name, blob);
+    } catch (e) {
+      localSaveErrors.push(`${name}: ${e?.message || String(e)}`);
+    }
+  }
 
   if (resume?.participantFolderId && resume?.sessionFolderId) {
     participantFolderId = resume.participantFolderId;
@@ -304,6 +378,8 @@ export async function uploadSession(
         metadata,
         participantId
       );
+
+      await saveLocalZip(zipBlob, zipFileName);
 
       const { driveFileId, webViewLink } = await uploadFileToDrive(
         zipBlob,
@@ -367,6 +443,7 @@ export async function uploadSession(
     }).summary;
 
     try {
+      await saveLocalJson(summaryBlob, summaryName);
       await uploadFileToDrive(
         summaryBlob,
         summaryName,
@@ -387,6 +464,7 @@ export async function uploadSession(
     sessionFolderLink: sessionFolderLink(sessionFolderId),
     participantFolderId,
     results,
+    localSaveErrors,
   };
 }
 

@@ -4,9 +4,6 @@ import { useSession } from "../context/SessionContext";
 import CONFIG from "../config";
 import "./HardwarePage.css";
 
-const DEFAULT_BACKEND_WS = "ws://localhost:5001";
-const DEFAULT_BACKEND_REST = "http://localhost:5001";
-
 function HardwarePage() {
   const navigate = useNavigate();
   const { setTZero, setCameraStream, participantId, metadata, username, greeting } = useSession();
@@ -14,24 +11,18 @@ function HardwarePage() {
   const [stream, setStream] = useState(null);
   const [cameraError, setCameraError] = useState(null);
   const [cameraReady, setCameraReady] = useState(false);
-  const [backendStatus, setBackendStatus] = useState("disconnected");
-  const [imuMode, setImuMode] = useState("synthetic");
   const [calibrationDone, setCalibrationDone] = useState(false);
-  const [packetCount, setPacketCount] = useState(0);
-  const [moduleStatus, setModuleStatus] = useState({});
-  const [moduleCount, setModuleCount] = useState(0);
+  const [imuDevices, setImuDevices] = useState({});
+  const [flaskReachable, setFlaskReachable] = useState(false);
   const [startupState, setStartupState] = useState("idle");
   const [startupError, setStartupError] = useState("");
   const [startupProgress, setStartupProgress] = useState([]);
 
   const videoRef = useRef(null);
-  const backendWsRef = useRef(null);
   const retainedForSessionRef = useRef(false);
-  const packetTotalRef = useRef(0);
-  const syntheticWorkerRef = useRef(null);
 
-  const backendWsUrl = CONFIG.BACKEND_WS_URL ?? DEFAULT_BACKEND_WS;
-  const backendRestUrl = CONFIG.BACKEND_REST_URL ?? DEFAULT_BACKEND_REST;
+  const dataUrl = CONFIG.FLASK_DATA_URL?.replace(/\/$/, "");
+  const syncUrl = CONFIG.FLASK_SYNC_URL?.replace(/\/$/, "");
 
   useEffect(() => {
     let cancelled = false;
@@ -75,97 +66,46 @@ function HardwarePage() {
   }, [stream]);
 
   useEffect(() => {
-    const ws = new WebSocket(`${backendWsUrl.replace(/\/$/, "")}/ws`);
-    backendWsRef.current = ws;
-
-    ws.onopen = () => {
-      setBackendStatus("connected");
-      setImuMode("backend");
-      packetTotalRef.current = 0;
-      setPacketCount(0);
-      setModuleStatus({});
-      setModuleCount(0);
-    };
-
-    ws.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data);
-        if (msg.type === "status") {
-          const modules = msg.modules || {};
-          setModuleStatus(modules);
-          setModuleCount(msg.moduleCount ?? Object.keys(modules).length);
-        } else if (msg.type === "frame") {
-          packetTotalRef.current += 1;
-          const n = packetTotalRef.current;
-          if (n % 10 === 0) {
-            setPacketCount(n);
-          }
-        }
-      } catch {
-        // Ignore malformed backend frames
-      }
-    };
-
-    ws.onerror = () => {
-      setBackendStatus("disconnected");
-      setImuMode("synthetic");
-    };
-
-    ws.onclose = () => {
-      setBackendStatus("disconnected");
-      setImuMode("synthetic");
-    };
-
-    return () => {
-      if (backendWsRef.current) {
-        backendWsRef.current.close();
-        backendWsRef.current = null;
-      }
-    };
-  }, [backendWsUrl]);
-
-  useEffect(() => {
-    if (imuMode !== "synthetic") {
-      if (syntheticWorkerRef.current) {
-        try {
-          syntheticWorkerRef.current.postMessage({ type: "STOP" });
-        } catch {
-          /* ignore */
-        }
-        syntheticWorkerRef.current = null;
-      }
+    if (!dataUrl) {
+      setFlaskReachable(false);
       return;
     }
 
-    packetTotalRef.current = 0;
-    setPacketCount(0);
+    let cancelled = false;
+    const pollMs = Math.max(10, Number(CONFIG.IMU_POLL_MS) || 20);
 
-    const worker = new Worker(
-      new URL("../workers/imuWorker.js", import.meta.url)
-    );
-    syntheticWorkerRef.current = worker;
-    const t0 = Date.now();
-    worker.postMessage({ type: "START", tZero: t0 });
-
-    worker.onmessage = () => {
-      packetTotalRef.current += 1;
-      const n = packetTotalRef.current;
-      if (n % 50 === 0) {
-        setPacketCount(n);
-      }
-    };
-
-    return () => {
-      if (syntheticWorkerRef.current === worker) {
-        try {
-          worker.postMessage({ type: "STOP" });
-        } catch {
-          /* ignore */
+    const poll = async () => {
+      try {
+        const res = await fetch(dataUrl);
+        if (cancelled) return;
+        if (res.ok) {
+          const data = await res.json();
+          setFlaskReachable(true);
+          setImuDevices(
+            data.devices && typeof data.devices === "object" ? data.devices : {}
+          );
+        } else {
+          setFlaskReachable(false);
         }
-        syntheticWorkerRef.current = null;
+      } catch {
+        if (!cancelled) {
+          setFlaskReachable(false);
+        }
       }
     };
-  }, [imuMode]);
+
+    void poll();
+    const id = window.setInterval(poll, pollMs);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [dataUrl]);
+
+  const liveKeySet = new Set(Object.keys(imuDevices));
+  const hasAtLeastOneActiveLive = CONFIG.SENSOR_SLOTS.some(
+    (s) => s.status === "active" && liveKeySet.has(s.id)
+  );
 
   const addStartupStep = (label, ok, details = "") => {
     setStartupProgress((prev) => [...prev, { label, ok, details }]);
@@ -178,62 +118,59 @@ function HardwarePage() {
     setStartupProgress([]);
 
     try {
-      // 1) Validate user/session metadata
       const hasUser = Boolean((username || metadata?.username || metadata?.name || "").trim());
       if (!hasUser) {
         throw new Error("Missing username. Please complete registration first.");
       }
       addStartupStep("User profile validated", true);
 
-      // 2) Camera availability
       if (!stream || !cameraReady || cameraError) {
         throw new Error("Camera is not ready.");
       }
       addStartupStep("Camera initialized", true);
 
-      // 3) MediaPipe readiness
       const hasMediaPipe = typeof window.Pose === "function";
       if (!hasMediaPipe) {
         throw new Error("MediaPipe pose model not loaded.");
       }
       addStartupStep("MediaPipe initialized", true);
 
-      // 4) Sensor check (backend or fallback worker)
-      const sensorsReady = imuMode === "backend" || packetCount > 0;
-      if (!sensorsReady) {
-        throw new Error("Sensors are not streaming yet.");
+      if (!hasAtLeastOneActiveLive) {
+        throw new Error(
+          "At least one expected IMU must be live. Check ESP32 WiFi and Flask bridge."
+        );
       }
-      addStartupStep("Sensors initialized", true, imuMode === "backend" ? "backend stream" : "synthetic fallback");
+      addStartupStep("IMU sensors detected", true, `${Object.keys(imuDevices).length} live`);
 
-      // 5) Recording prerequisites
       const canRecord = typeof MediaRecorder !== "undefined";
       if (!canRecord) {
         throw new Error("MediaRecorder is not available in this browser.");
       }
       addStartupStep("Recording engine initialized", true);
 
-      // 6) Storage handlers (local)
       const canStore = typeof localStorage !== "undefined";
       if (!canStore) {
         throw new Error("Local storage unavailable.");
       }
       addStartupStep("Storage handlers initialized", true);
 
-      // 7) Backend connectivity check (non-blocking)
-      let backendReachable = false;
-      try {
-        const pingRes = await fetch(`${backendRestUrl.replace(/\/$/, "")}/session/start`, {
-          method: "OPTIONS",
-        });
-        backendReachable = pingRes.ok || pingRes.status === 204 || pingRes.status === 404;
-      } catch {
-        backendReachable = false;
+      let flaskOk = false;
+      if (syncUrl) {
+        try {
+          const ping = await fetch(syncUrl, { method: "OPTIONS" });
+          flaskOk = ping.ok || ping.status === 204 || ping.status === 405;
+        } catch {
+          flaskOk = false;
+        }
       }
-      addStartupStep("Backend connectivity checked", backendReachable, backendReachable ? "reachable" : "will run in fallback mode");
+      addStartupStep("Flask bridge checked", flaskOk || flaskReachable, flaskReachable ? "polling data" : "check network");
 
-      // 8) Drive availability check (non-blocking)
       const driveAvailable = Boolean(window.google?.accounts?.oauth2);
-      addStartupStep("Drive upload availability checked", driveAvailable, driveAvailable ? "Google APIs loaded" : "upload can be done later on Review page");
+      addStartupStep(
+        "Drive upload availability checked",
+        driveAvailable,
+        driveAvailable ? "Google APIs loaded" : "upload can be done later on Review page"
+      );
 
       if (!calibrationDone) {
         throw new Error("Calibration must be confirmed before starting.");
@@ -245,17 +182,13 @@ function HardwarePage() {
       setTZero(t0);
       setCameraStream(stream);
 
-      await fetch(`${backendRestUrl.replace(/\/$/, "")}/session/start`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          participantId,
-          participantName: metadata?.name || username || "participant",
-          sessionId: `session_${Date.now()}`,
-        }),
-      }).catch(() => {
-        // Backend may be down; sequencer can still run with fallback.
-      });
+      if (syncUrl) {
+        await fetch(syncUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tZero: t0 }),
+        }).catch(() => {});
+      }
 
       setStartupState("ready");
       navigate("/sequencer");
@@ -265,7 +198,11 @@ function HardwarePage() {
     }
   };
 
-  const systemsReady = cameraReady && calibrationDone;
+  const systemsReady = cameraReady && calibrationDone && hasAtLeastOneActiveLive;
+
+  const liveCount = Object.keys(imuDevices).length;
+  const missingCount = Math.max(0, CONFIG.ACTIVE_SENSOR_COUNT - liveCount);
+  const reservedCount = CONFIG.TOTAL_SENSOR_COUNT - CONFIG.ACTIVE_SENSOR_COUNT;
 
   return (
     <div className="container-fluid py-4">
@@ -325,46 +262,102 @@ function HardwarePage() {
               </div>
 
               <div className="status-row">
-                <div>
-                  <div className="fw-medium">IMU Data</div>
-                  <div className="small text-muted">
-                    Aggregated frames: {packetCount}
-                  </div>
+                <span className="fw-medium">Flask IMU bridge</span>
+                {flaskReachable ? (
+                  <span className="badge bg-success">Reachable</span>
+                ) : (
+                  <span className="badge bg-secondary">Not reachable</span>
+                )}
+              </div>
+
+              <div className="sensor-summary">
+                <span className="text-success">
+                  🟢 {liveCount} Live
+                </span>
+                <span className="text-danger ms-3">
+                  🔴 {missingCount} Missing
+                </span>
+                <span className="text-secondary ms-3">
+                  ⬜ {reservedCount} Reserved
+                </span>
+              </div>
+
+              {liveCount < CONFIG.ACTIVE_SENSOR_COUNT && (
+                <div className="alert alert-warning mt-2 py-2 mb-0">
+                  ⚠ Only {liveCount} of {CONFIG.ACTIVE_SENSOR_COUNT} expected sensors detected.
+                  Recording will continue with available sensors only.
                 </div>
-                {imuMode === "backend" ? (
-                  <span className="badge bg-success">{moduleCount} modules connected</span>
-                ) : (
-                  <span className="badge bg-warning text-dark">
-                    Synthetic fallback
-                  </span>
-                )}
-              </div>
+              )}
 
-              <div className="status-row">
-                <span className="fw-medium">Backend</span>
-                {backendStatus === "connected" ? (
-                  <span className="badge bg-success">Connected</span>
-                ) : (
-                  <span className="badge bg-secondary">
-                    Not connected (fallback mode)
-                  </span>
-                )}
-              </div>
+              <div className="sensor-grid">
+                {CONFIG.SENSOR_SLOTS.map((slot) => {
+                  const liveData = imuDevices[slot.id];
+                  const isLive = liveData !== undefined;
+                  const cardVariant = isLive
+                    ? "live"
+                    : slot.status === "placeholder"
+                      ? "placeholder"
+                      : "timeout";
+                  const badgeClass = isLive
+                    ? "badge-live"
+                    : slot.status === "placeholder"
+                      ? "badge-placeholder"
+                      : "badge-timeout";
 
-              {Object.entries(moduleStatus).length > 0 ? (
-                <div className="mt-3">
-                  {Object.entries(moduleStatus).map(([id, mod]) => (
-                    <div key={id} className="d-flex justify-content-between small mb-1">
-                      <span>
-                        #{id} {mod.bodyPart || `Module ${id}`}
-                      </span>
-                      <span>
-                        SOC {mod.soc ?? "--"}% | RSSI {mod.rssi ?? "--"} dBm
-                      </span>
+                  return (
+                    <div
+                      key={slot.id}
+                      className={`sensor-card sensor-card--${cardVariant}`}
+                    >
+                      <div className="sensor-card__header">
+                        <span className="sensor-id">{slot.label}</span>
+                        <span className={`sensor-badge ${badgeClass}`}>
+                          {isLive
+                            ? "🟢 Live"
+                            : slot.status === "placeholder"
+                              ? "⬜ Reserved"
+                              : "🔴 No signal"}
+                        </span>
+                      </div>
+
+                      <div className="sensor-body-part">📍 {slot.bodyPart}</div>
+
+                      {isLive && (
+                        <div className="sensor-data">
+                          <div>
+                            🔋{" "}
+                            {typeof liveData.soc === "number"
+                              ? `${liveData.soc.toFixed(0)}%`
+                              : "—"}
+                          </div>
+                          <div>
+                            📶 {liveData.rssi != null ? `${liveData.rssi} dBm` : "—"}
+                          </div>
+                          <div>
+                            qr:{" "}
+                            {typeof liveData.qr === "number"
+                              ? liveData.qr.toFixed(3)
+                              : "—"}
+                          </div>
+                        </div>
+                      )}
+
+                      {slot.status === "placeholder" && (
+                        <div className="sensor-placeholder-msg">
+                          Sensor not yet available. Flash ESP32 with id &quot;{slot.id}&quot; to
+                          activate.
+                        </div>
+                      )}
+
+                      {slot.status === "active" && !isLive && (
+                        <div className="sensor-timeout-msg">
+                          Expected sensor not detected. Check ESP32 WiFi connection.
+                        </div>
+                      )}
                     </div>
-                  ))}
-                </div>
-              ) : null}
+                  );
+                })}
+              </div>
             </div>
           </div>
 
@@ -372,9 +365,8 @@ function HardwarePage() {
             <div className="card-body">
               <h2 className="h5 card-title">Pre-Session Calibration</h2>
               <p className="text-muted small mb-3">
-                Ask the participant to stand upright facing the camera in
-                Mountain Pose (Tadasana). Ensure full body is visible in the
-                frame.
+                Ask the participant to stand upright facing the camera in Mountain Pose (Tadasana).
+                Ensure full body is visible in the frame.
               </p>
               <button
                 type="button"
@@ -382,14 +374,10 @@ function HardwarePage() {
                 disabled={calibrationDone}
                 onClick={() => setCalibrationDone(true)}
               >
-                {calibrationDone
-                  ? "Calibration Complete ✓"
-                  : "Confirm Calibration ✓"}
+                {calibrationDone ? "Calibration Complete ✓" : "Confirm Calibration ✓"}
               </button>
               {calibrationDone ? (
-                <p className="small text-success mt-2 mb-0">
-                  Ready to begin session
-                </p>
+                <p className="small text-success mt-2 mb-0">Ready to begin session</p>
               ) : null}
             </div>
           </div>
@@ -405,9 +393,11 @@ function HardwarePage() {
           <p className="small mt-2 mb-0 text-muted">
             {!cameraReady
               ? "⚠ Camera must be connected"
-              : !calibrationDone
-                ? "⚠ Calibration must be confirmed"
-                : "✅ All systems ready"}
+              : !hasAtLeastOneActiveLive
+                ? "⚠ At least one active IMU must be live"
+                : !calibrationDone
+                  ? "⚠ Calibration must be confirmed"
+                  : "✅ All systems ready"}
           </p>
           {startupProgress.length > 0 && (
             <div className="startup-panel mt-3">
