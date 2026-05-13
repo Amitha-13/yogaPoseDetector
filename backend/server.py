@@ -2,6 +2,7 @@ import asyncio
 import csv
 import json
 import signal
+import socket
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -17,6 +18,12 @@ from websockets.asyncio.server import ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
 from zeroconf import IPVersion, ServiceInfo
 from zeroconf.asyncio import AsyncZeroconf
+
+# UDP Configuration for Digital Twin
+TARGET_IP = "10.20.15.206"
+#TARGET_IP = "127.0.0.1"
+TARGET_PORT = 5000
+udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
 
 MODULE_LABELS = {
@@ -338,6 +345,25 @@ async def session_stop() -> dict[str, Any]:
     if result.get("export", {}).get("status") == "ready":
         await bridge._broadcast_ui({"type": "session_ready", **result["export"]})
     return {"ok": True, **result}
+
+
+@api.websocket("/ws/landmarks")
+async def websocket_landmarks(ws: WebSocket):
+    await ws.accept()
+    loop = asyncio.get_running_loop()
+    try:
+        while True:
+            data = await ws.receive_json()
+            # data is expected to be a list of landmarks: [{x, y, z, visibility}, ...]
+            if isinstance(data, list) and len(data) > 0:
+                # Format: x,y,z|x,y,z|...
+                formatted_data = "|".join([f"{lm.get('x',0)},{lm.get('y',0)},{lm.get('z',0)}" for lm in data])
+                # Non-blocking UDP send
+                await loop.run_in_executor(None, udp_socket.sendto, formatted_data.encode(), (TARGET_IP, TARGET_PORT))
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        print(f"Error in landmarks WS: {e}")
 
 
 @api.websocket("/ws")

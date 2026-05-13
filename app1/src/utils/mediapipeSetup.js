@@ -78,7 +78,8 @@ export function initMediaPipe(
   videoElement,
   canvasElement,
   onLandmarks,
-  tZero
+  tZero,
+  onRawResults
 ) {
   if (typeof window.Pose !== "function") {
     console.warn("MediaPipe Pose script not loaded");
@@ -152,7 +153,25 @@ export function initMediaPipe(
     const mapY = (lm) => offsetY + lm.y * displayedHeight;
 
     if (results.poseLandmarks) {
+<<<<<<< HEAD
       drawNormalizedConnections(
+=======
+      // Live Data Bridge: Send raw landmarks if callback provided
+      if (typeof onRawResults === "function") {
+        onRawResults(results.poseLandmarks);
+      }
+
+      const drawLandmarksFn =
+        typeof window.drawLandmarks === "function"
+          ? window.drawLandmarks
+          : undefined;
+      const drawConnectorsFn =
+        typeof window.drawConnectors === "function"
+          ? window.drawConnectors
+          : undefined;
+      drawFrame(
+        results.poseLandmarks,
+>>>>>>> b6d83053e9b3288e51252cf3b32388035fe7dbbf
         canvasCtx,
         results.poseLandmarks,
         window.POSE_CONNECTIONS,
