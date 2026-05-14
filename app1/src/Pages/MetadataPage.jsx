@@ -3,6 +3,13 @@ import { useNavigate } from "react-router-dom";
 import { useSession } from "../context/SessionContext";
 import "./MetadataPage.css";
 
+function getGreeting() {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good Morning";
+  if (hour < 17) return "Good Afternoon";
+  return "Good Evening";
+}
+
 const requiredFields = ["name", "age", "gender", "height", "weight", "experience"];
 
 const validateField = (name, value) => {
@@ -37,7 +44,7 @@ const validateField = (name, value) => {
 
 const MetadataPage = () => {
   const navigate = useNavigate();
-  const { operatorInfo, participantId, metadata, setMetadata, username, greeting, sessionNumber } =
+  const { operatorInfo, participantId, metadata, setMetadata, username, sessionNumber } =
     useSession();
   const [formData, setFormData] = useState(metadata);
   const [touched, setTouched] = useState({});
@@ -91,20 +98,30 @@ const MetadataPage = () => {
   return (
     <div className="metadata-page">
       <form className="metadata-card" onSubmit={onSubmit}>
-        <div className="meta-top">
-          <div>
-            {greeting}, {username || "participant"}
-          </div>
-          <div>
-            Operator: {operatorInfo.operatorName} - {operatorInfo.institutionName}
-          </div>
-          <div className="participant-badge">
-            Participant ID: {participantId}
-            <button type="button" className="copy-btn" onClick={copyId}>
-              Copy
-            </button>
-          </div>
-          <div>Session Date: {formData.sessionDate}</div>
+        <div className="metadata-greeting">
+          <h2 className="greeting-text">
+            {getGreeting()},{" "}
+            {metadata.name ||
+              operatorInfo?.participantUsername ||
+              "Participant"}
+            !
+          </h2>
+          <p className="greeting-subtext">
+            Please fill in your details below to begin the session.
+          </p>
+        </div>
+
+        <div className="operator-info-bar">
+          <span>👤 Operator: {operatorInfo.operatorName}</span>
+          <span className="ms-3">🏫 {operatorInfo.institutionName}</span>
+          <span className="ms-3 text-muted">🕐 {new Date().toLocaleString()}</span>
+        </div>
+
+        <div className="participant-id-bar mt-2">
+          Participant ID: {participantId}
+          <button type="button" className="copy-btn" onClick={copyId}>
+            Copy
+          </button>
         </div>
 
         <div className="meta-grid">

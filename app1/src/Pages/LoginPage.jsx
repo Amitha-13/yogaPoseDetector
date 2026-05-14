@@ -1,32 +1,16 @@
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSession } from "../context/SessionContext";
 import "./LoginPage.css";
 
 const LoginPage = () => {
   const navigate = useNavigate();
-  const { username, setUsername, greeting, setOperatorInfo } = useSession();
+  const { username, setUsername, setOperatorInfo } = useSession();
   const [operatorName, setOperatorName] = useState("");
   const [institutionName, setInstitutionName] = useState("");
   const [usernameInput, setUsernameInput] = useState(() =>
     String(username ?? "").trim()
   );
-
-  const nowText = useMemo(() => new Date().toLocaleString(), []);
-
-  /** Persisted username (after prior successful login). */
-  const persistedUsername = String(username ?? "").trim();
-  const inputUsername = usernameInput.trim();
-  /**
-   * Only show a name in the greeting when the field matches what was saved.
-   * Avoids showing a stale localStorage username before this session’s input agrees.
-   * Returning users: prefilled field matches → they see "Good …, name".
-   */
-  const showUsernameInGreeting =
-    persistedUsername.length > 0 && inputUsername === persistedUsername;
-  const displayGreeting = showUsernameInGreeting
-    ? `${greeting}, ${persistedUsername}`
-    : greeting;
 
   const isValid =
     usernameInput.trim() !== "" &&
@@ -49,8 +33,6 @@ const LoginPage = () => {
     <div className="login-page">
       <form className="login-card" onSubmit={handleSubmit}>
         <h1 className="login-title">Yoga Posture Data Collection</h1>
-        <p className="login-greeting">{displayGreeting}</p>
-        <p className="login-datetime">{nowText}</p>
 
         <label className="field-label" htmlFor="username">
           Participant Username

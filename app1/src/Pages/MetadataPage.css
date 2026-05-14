@@ -14,14 +14,35 @@
   padding: 24px;
 }
 
-.meta-top {
+.metadata-greeting {
+  text-align: center;
+  padding: 24px 0 16px 0;
+  border-bottom: 1px solid #e9ecef;
   margin-bottom: 20px;
-  color: #334155;
-  font-size: 0.95rem;
-  line-height: 1.5;
 }
 
-.participant-badge {
+.greeting-text {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #1f618d;
+  margin-bottom: 6px;
+}
+
+.greeting-subtext {
+  color: #6b7280;
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+.operator-info-bar {
+  font-size: 0.85rem;
+  color: #6b7280;
+  padding: 8px 0;
+  border-bottom: 1px solid #f0f0f0;
+  margin-bottom: 12px;
+}
+
+.participant-id-bar {
   display: inline-flex;
   align-items: center;
   gap: 8px;

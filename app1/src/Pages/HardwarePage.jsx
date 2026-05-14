@@ -102,11 +102,6 @@ function HardwarePage() {
     };
   }, [dataUrl]);
 
-  const liveKeySet = new Set(Object.keys(imuDevices));
-  const hasAtLeastOneActiveLive = CONFIG.SENSOR_SLOTS.some(
-    (s) => s.status === "active" && liveKeySet.has(s.id)
-  );
-
   const addStartupStep = (label, ok, details = "") => {
     setStartupProgress((prev) => [...prev, { label, ok, details }]);
   };
@@ -135,12 +130,13 @@ function HardwarePage() {
       }
       addStartupStep("MediaPipe initialized", true);
 
-      if (!hasAtLeastOneActiveLive) {
-        throw new Error(
-          "At least one expected IMU must be live. Check ESP32 WiFi and Flask bridge."
-        );
-      }
-      addStartupStep("IMU sensors detected", true, `${Object.keys(imuDevices).length} live`);
+      addStartupStep(
+        "IMU sensors (optional)",
+        true,
+        Object.keys(imuDevices).length > 0
+          ? `${Object.keys(imuDevices).length} live`
+          : "none — video/landmarks only"
+      );
 
       const canRecord = typeof MediaRecorder !== "undefined";
       if (!canRecord) {
@@ -198,7 +194,7 @@ function HardwarePage() {
     }
   };
 
-  const systemsReady = cameraReady && calibrationDone && hasAtLeastOneActiveLive;
+  const systemsReady = cameraReady && calibrationDone;
 
   const liveCount = Object.keys(imuDevices).length;
   const missingCount = Math.max(0, CONFIG.ACTIVE_SENSOR_COUNT - liveCount);
@@ -281,13 +277,6 @@ function HardwarePage() {
                   ⬜ {reservedCount} Reserved
                 </span>
               </div>
-
-              {liveCount < CONFIG.ACTIVE_SENSOR_COUNT && (
-                <div className="alert alert-warning mt-2 py-2 mb-0">
-                  ⚠ Only {liveCount} of {CONFIG.ACTIVE_SENSOR_COUNT} expected sensors detected.
-                  Recording will continue with available sensors only.
-                </div>
-              )}
 
               <div className="sensor-grid">
                 {CONFIG.SENSOR_SLOTS.map((slot) => {
@@ -388,17 +377,32 @@ function HardwarePage() {
             disabled={!systemsReady || startupState === "starting"}
             onClick={handleStartSession}
           >
-            {startupState === "starting" ? "Starting session..." : "Start Session →"}
-          </button>
-          <p className="small mt-2 mb-0 text-muted">
-            {!cameraReady
-              ? "⚠ Camera must be connected"
-              : !hasAtLeastOneActiveLive
-                ? "⚠ At least one active IMU must be live"
+            {startupState === "starting"
+              ? "Starting session..."
+              : !cameraReady
+                ? "Waiting for camera..."
                 : !calibrationDone
-                  ? "⚠ Calibration must be confirmed"
-                  : "✅ All systems ready"}
-          </p>
+                  ? "Confirm calibration first"
+                  : "Start Session →"}
+          </button>
+          {Object.keys(imuDevices).length === 0 && (
+            <div className="alert alert-info mt-2 py-2" style={{ fontSize: "0.85rem" }}>
+              ℹ️ No IMU sensors detected. Session will record video and landmarks only. IMU data will
+              be empty in the exported files.
+            </div>
+          )}
+          {Object.keys(imuDevices).length > 0 &&
+            Object.keys(imuDevices).length < CONFIG.ACTIVE_SENSOR_COUNT && (
+              <div className="alert alert-warning mt-2 py-2" style={{ fontSize: "0.85rem" }}>
+                ⚠️ {Object.keys(imuDevices).length} of {CONFIG.ACTIVE_SENSOR_COUNT} sensors detected.
+                Recording will use available sensors only.
+              </div>
+            )}
+          {Object.keys(imuDevices).length >= CONFIG.ACTIVE_SENSOR_COUNT && (
+            <div className="alert alert-success mt-2 py-2" style={{ fontSize: "0.85rem" }}>
+              ✅ All {CONFIG.ACTIVE_SENSOR_COUNT} sensors connected. Ready to record.
+            </div>
+          )}
           {startupProgress.length > 0 && (
             <div className="startup-panel mt-3">
               {startupProgress.map((step, idx) => (

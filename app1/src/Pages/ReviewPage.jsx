@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom";
 import CONFIG from "../config";
 import { useSession } from "../context/SessionContext";
-import { uploadSession } from "../utils/driveUpload";
+import { uploadSession, saveSessionLocally } from "../utils/driveUpload";
 import { addToQueue } from "../utils/uploadQueue";
 import {
   getReadyYogaRootHandle,
@@ -31,6 +31,12 @@ function ReviewPage() {
   const [isOnline, setIsOnline] = useState(
     typeof navigator !== "undefined" ? navigator.onLine : true
   );
+  const [storageMode, setStorageMode] = useState(() =>
+    typeof navigator !== "undefined" && navigator.onLine ? "drive" : "local"
+  );
+  const [uploading, setUploading] = useState(false);
+  const [localSaveResults, setLocalSaveResults] = useState(null);
+  const [localSaving, setLocalSaving] = useState(false);
   const [uploadResults, setUploadResults] = useState([]);
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(false);
@@ -47,13 +53,18 @@ function ReviewPage() {
   }, [localYogaDirHandle]);
 
   useEffect(() => {
-    const on = () => setIsOnline(true);
-    const off = () => setIsOnline(false);
-    window.addEventListener("online", on);
-    window.addEventListener("offline", off);
+    const goOnline = () => {
+      setIsOnline(true);
+    };
+    const goOffline = () => {
+      setIsOnline(false);
+      setStorageMode("local");
+    };
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
     return () => {
-      window.removeEventListener("online", on);
-      window.removeEventListener("offline", off);
+      window.removeEventListener("online", goOnline);
+      window.removeEventListener("offline", goOffline);
     };
   }, []);
 
@@ -200,6 +211,35 @@ function ReviewPage() {
     [sessionRecordings, metadata, participantId, driveAccessToken]
   );
 
+  const handleUpload = useCallback(async () => {
+    setError(null);
+    setUploading(true);
+    setLocalSaveMessage(null);
+    uploadStartedRef.current = true;
+    try {
+      await runUpload();
+    } catch {
+      uploadStartedRef.current = false;
+    } finally {
+      setUploading(false);
+    }
+  }, [runUpload]);
+
+  const handleLocalSave = useCallback(async () => {
+    setLocalSaving(true);
+    try {
+      const result = await saveSessionLocally(sessionRecordings, metadata, participantId);
+      setLocalSaveResults(result);
+    } catch (err) {
+      setLocalSaveResults({
+        success: false,
+        error: err?.message || String(err),
+      });
+    } finally {
+      setLocalSaving(false);
+    }
+  }, [sessionRecordings, metadata, participantId]);
+
   const handleChooseLocalYogaFolder = useCallback(async () => {
     setError(null);
     try {
@@ -214,21 +254,6 @@ function ReviewPage() {
       setError(e?.message || String(e));
     }
   }, []);
-
-  useEffect(() => {
-    if (!isOnline || !driveAccessToken || sessionRecordings.length === 0) {
-      return;
-    }
-    const t = window.setTimeout(() => {
-      if (!uploadStartedRef.current) {
-        uploadStartedRef.current = true;
-        runUpload().catch(() => {
-          uploadStartedRef.current = false;
-        });
-      }
-    }, 1000);
-    return () => window.clearTimeout(t);
-  }, [isOnline, driveAccessToken, sessionRecordings.length, runUpload]);
 
   const failedIndices = useMemo(() => {
     const fromResults = uploadResults
@@ -425,9 +450,12 @@ function ReviewPage() {
       </header>
 
       {!isOnline && (
-        <div className="alert alert-warning" role="alert">
-          ⚠ No internet connection. Uploads will start automatically when
-          connected.
+        <div className="alert alert-warning d-flex align-items-center gap-2 mb-3">
+          <span>📡</span>
+          <span>
+            <strong>No internet connection.</strong> Files will be saved to your local computer. You
+            can upload to Google Drive later when connected.
+          </span>
         </div>
       )}
 
@@ -497,6 +525,120 @@ function ReviewPage() {
       {localSaveMessage && (
         <div className="alert alert-light border small mb-3" role="status">
           {localSaveMessage}
+        </div>
+      )}
+
+      <div className="storage-mode-selector mb-4">
+        <p className="fw-bold mb-2">Choose where to save your session data:</p>
+        <div className="d-flex gap-3 flex-wrap">
+          <button
+            type="button"
+            className={`storage-btn ${storageMode === "drive" ? "storage-btn--active" : ""}`}
+            onClick={() => setStorageMode("drive")}
+            disabled={!isOnline || !driveAccessToken}
+          >
+            ☁️ Google Drive
+            {(!isOnline || !driveAccessToken) && (
+              <span className="storage-btn__note">
+                {!isOnline ? "(offline)" : "(not signed in)"}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            className={`storage-btn ${storageMode === "local" ? "storage-btn--active" : ""}`}
+            onClick={() => setStorageMode("local")}
+          >
+            💾 Save to Local Folder
+            <span className="storage-btn__note">(works offline)</span>
+          </button>
+
+          <button
+            type="button"
+            className={`storage-btn ${storageMode === "both" ? "storage-btn--active" : ""}`}
+            onClick={() => setStorageMode("both")}
+            disabled={!isOnline || !driveAccessToken}
+          >
+            ☁️ + 💾 Both
+            <span className="storage-btn__note">(Drive + local backup)</span>
+          </button>
+        </div>
+      </div>
+
+      {storageMode === "drive" && (
+        <button
+          type="button"
+          className="btn btn-primary btn-lg w-100 mb-3"
+          onClick={() => void handleUpload()}
+          disabled={uploading || !driveAccessToken}
+        >
+          {uploading ? "Uploading to Drive..." : "☁️ Upload to Google Drive"}
+        </button>
+      )}
+
+      {storageMode === "local" && (
+        <button
+          type="button"
+          className="btn btn-success btn-lg w-100 mb-3"
+          onClick={() => void handleLocalSave()}
+          disabled={localSaving}
+        >
+          {localSaving ? "Saving..." : "💾 Save to Local Folder"}
+        </button>
+      )}
+
+      {storageMode === "both" && (
+        <div className="d-flex flex-column gap-2 mb-3">
+          <button
+            type="button"
+            className="btn btn-primary btn-lg w-100"
+            onClick={() => void handleUpload()}
+            disabled={uploading || !driveAccessToken}
+          >
+            {uploading ? "Uploading..." : "☁️ Upload to Google Drive"}
+          </button>
+          <button
+            type="button"
+            className="btn btn-success btn-lg w-100"
+            onClick={() => void handleLocalSave()}
+            disabled={localSaving}
+          >
+            {localSaving ? "Saving..." : "💾 Also Save Local Backup"}
+          </button>
+        </div>
+      )}
+
+      {localSaveResults?.success && (
+        <div className="alert alert-success mt-3 mb-3">
+          <strong>✅ Saved locally!</strong>
+          <div>
+            Folder: <code>{localSaveResults.folderName}</code>
+          </div>
+          <div className="mt-2">
+            {localSaveResults.results?.map((r, idx) => (
+              <div key={`${r.poseName}-${idx}`}>
+                {r.status === "saved_locally" ? "✅" : r.status === "skipped" ? "⏭" : "❌"} {r.poseName}
+                {r.fileName && (
+                  <span className="text-muted ms-2 small">{r.fileName}</span>
+                )}
+              </div>
+            ))}
+          </div>
+          {isOnline && driveAccessToken && (
+            <div className="mt-2">
+              <button
+                type="button"
+                className="btn btn-sm btn-outline-primary"
+                onClick={() => {
+                  setStorageMode("drive");
+                  void handleUpload();
+                }}
+              >
+                Also upload to Drive now
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -624,16 +766,7 @@ function ReviewPage() {
           {copied ? "Copied! ✓" : "Copy Session Summary"}
         </button>
         {driveAccessToken && isOnline && (
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => {
-              uploadStartedRef.current = true;
-              runUpload().catch(() => {
-                uploadStartedRef.current = false;
-              });
-            }}
-          >
+          <button type="button" className="btn btn-primary" onClick={() => void handleUpload()}>
             Run upload again
           </button>
         )}

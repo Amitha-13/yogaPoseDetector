@@ -468,4 +468,93 @@ export async function uploadSession(
   };
 }
 
+/**
+ * @param {object[]} sessionRecordings
+ * @param {object} metadata
+ * @param {string} participantId
+ */
+export async function saveSessionLocally(sessionRecordings, metadata, participantId) {
+  try {
+    const dirHandle = await window.showDirectoryPicker({
+      mode: "readwrite",
+      startIn: "downloads",
+    });
+
+    const sessionDate = new Date().toISOString().split("T")[0];
+    const folderName = `${participantId}_${sessionDate}_Session`;
+    const participantDir = await dirHandle.getDirectoryHandle(folderName, { create: true });
+
+    const results = [];
+
+    for (const recording of sessionRecordings) {
+      if (recording.skipped) {
+        results.push({
+          poseName: recording.poseName,
+          status: "skipped",
+        });
+        continue;
+      }
+
+      try {
+        const { zipBlob, zipFileName } = await createSessionZip(
+          recording,
+          metadata,
+          participantId
+        );
+
+        const fileHandle = await participantDir.getFileHandle(zipFileName, { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(zipBlob);
+        await writable.close();
+
+        results.push({
+          poseName: recording.poseName,
+          fileName: zipFileName,
+          status: "saved_locally",
+          path: `${folderName}/${zipFileName}`,
+        });
+      } catch (err) {
+        results.push({
+          poseName: recording.poseName,
+          status: "failed",
+          error: err?.message || String(err),
+        });
+      }
+    }
+
+    const summary = {
+      participantId,
+      metadata,
+      sessionDate: new Date().toISOString(),
+      savedLocally: true,
+      poses: sessionRecordings.map((r) => ({
+        poseId: r.poseId,
+        poseName: r.poseName,
+        skipped: r.skipped,
+      })),
+    };
+    const summaryHandle = await participantDir.getFileHandle(
+      `${participantId}_session_summary.json`,
+      { create: true }
+    );
+    const summaryWritable = await summaryHandle.createWritable();
+    await summaryWritable.write(JSON.stringify(summary, null, 2));
+    await summaryWritable.close();
+
+    return {
+      success: true,
+      folderName,
+      results,
+    };
+  } catch (err) {
+    if (err?.name === "AbortError") {
+      return { success: false, cancelled: true };
+    }
+    return {
+      success: false,
+      error: err?.message || String(err),
+    };
+  }
+}
+
 export { createDriveFolder, uploadFileToDrive, createSessionZip };

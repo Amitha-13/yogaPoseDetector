@@ -48,3 +48,49 @@
 .drive-link:hover {
   text-decoration: underline;
 }
+
+.storage-mode-selector {
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 12px;
+  padding: 16px 20px;
+}
+
+.storage-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 20px;
+  border-radius: 10px;
+  border: 2px solid #dee2e6;
+  background: white;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: #374151;
+  transition: all 0.2s;
+  min-width: 160px;
+}
+
+.storage-btn:hover:not(:disabled) {
+  border-color: #2e86c1;
+  color: #2e86c1;
+}
+
+.storage-btn--active {
+  border-color: #1f618d;
+  background: #eaf4fb;
+  color: #1f618d;
+}
+
+.storage-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.storage-btn__note {
+  font-size: 0.72rem;
+  font-weight: 400;
+  color: #9ca3af;
+  margin-top: 2px;
+}
