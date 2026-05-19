@@ -1,63 +1,37 @@
 import CONFIG from "../config";
+import { uploadSessionWebm } from "./sessionRecorderApi";
 
 let mediaRecorder = null;
 let recordedChunks = [];
-let imuBuffer = [];
 let tZero = null;
-let pollTimer = null;
 
-async function postSync(sessionTZero) {
-  const url = CONFIG.FLASK_SYNC_URL;
-  if (!url) return;
-  try {
-    await fetch(url.replace(/\/$/, ""), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tZero: sessionTZero }),
-    });
-  } catch {
-    /* Flask may be offline */
+function getRecorderMimeType() {
+  const preferred = "video/webm;codecs=vp8,opus";
+  if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(preferred)) {
+    return preferred;
   }
+  return "video/webm";
 }
 
 /**
  * @param {MediaStream} stream
- * @param {{ sessionTZero?: number | null }} [options]
+ * @param {{ sessionTZero?: number | null, videoElement?: HTMLVideoElement | null }} [options]
  */
 export function startRecording(stream, options = {}) {
   const { sessionTZero } = options;
   tZero = Date.now();
   recordedChunks = [];
-  imuBuffer = [];
-
-  if (sessionTZero != null) {
-    void postSync(sessionTZero);
-  }
 
   mediaRecorder = new MediaRecorder(stream, {
-    mimeType: "video/webm;codecs=vp8,opus",
+    mimeType: getRecorderMimeType(),
   });
   mediaRecorder.ondataavailable = (e) => {
     if (e.data.size > 0) recordedChunks.push(e.data);
   };
   mediaRecorder.start(100);
 
-  const pollMs = Math.max(10, Number(CONFIG.IMU_POLL_MS) || 20);
-  const dataUrl = CONFIG.FLASK_DATA_URL?.replace(/\/$/, "");
-  if (dataUrl) {
-    pollTimer = window.setInterval(async () => {
-      try {
-        const res = await fetch(dataUrl);
-        if (!res.ok) return;
-        const data = await res.json();
-        imuBuffer.push({
-          relative_timestamp: data.relative_timestamp,
-          devices: data.devices && typeof data.devices === "object" ? data.devices : {},
-        });
-      } catch {
-        /* ignore poll errors */
-      }
-    }, pollMs);
+  if (sessionTZero != null) {
+    tZero = sessionTZero;
   }
 
   return tZero;
@@ -65,28 +39,34 @@ export function startRecording(stream, options = {}) {
 
 export function stopRecording() {
   return new Promise((resolve) => {
-    if (pollTimer != null) {
-      window.clearInterval(pollTimer);
-      pollTimer = null;
-    }
+    const finish = async () => {
+      const videoBlob = new Blob(recordedChunks, { type: "video/webm" });
+      recordedChunks = [];
+      mediaRecorder = null;
+
+      if (CONFIG.USE_OFFLINE_SESSION_RECORDER && videoBlob.size > 0) {
+        try {
+          await uploadSessionWebm(videoBlob);
+        } catch (err) {
+          console.error("Failed to upload WebM to session folder:", err);
+        }
+      }
+
+      resolve({
+        videoBlob,
+        imuPackets: [],
+        tZero,
+        storedOffline: CONFIG.USE_OFFLINE_SESSION_RECORDER,
+      });
+    };
 
     if (!mediaRecorder) {
-      resolve({
-        videoBlob: new Blob(recordedChunks, { type: "video/webm" }),
-        imuPackets: [...imuBuffer],
-        tZero,
-      });
+      void finish();
       return;
     }
 
     mediaRecorder.onstop = () => {
-      const videoBlob = new Blob(recordedChunks, { type: "video/webm" });
-      mediaRecorder = null;
-      resolve({
-        videoBlob,
-        imuPackets: [...imuBuffer],
-        tZero,
-      });
+      void finish();
     };
     mediaRecorder.stop();
   });
@@ -94,8 +74,4 @@ export function stopRecording() {
 
 export function getTZero() {
   return tZero;
-}
-
-export function getImuBuffer() {
-  return [...imuBuffer];
 }

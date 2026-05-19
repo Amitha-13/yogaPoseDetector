@@ -1,6 +1,5 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
-import CONFIG from "../config";
 import { useSession } from "../context/SessionContext";
 import "./ConsentPage.css";
 
@@ -12,32 +11,8 @@ const ConsentPage = () => {
     metadata,
     consentChecks,
     consentGiven,
-    driveAccessToken,
     setConsentChecks,
-    setDriveAccessToken,
   } = useSession();
-
-  const signInWithGoogle = () => {
-    if (!window.google?.accounts?.oauth2) {
-      alert("Google Identity Services not loaded.");
-      return;
-    }
-
-    const tokenClient = window.google.accounts.oauth2.initTokenClient({
-      client_id: CONFIG.GOOGLE_CLIENT_ID,
-      scope: "https://www.googleapis.com/auth/drive.file",
-      callback: (response) => {
-        if (response?.access_token) {
-          console.log("✅ TOKEN RECEIVED:", response.access_token); // 👈 ADD THIS (for testing)
-          setDriveAccessToken(response.access_token);
-        } else {
-          console.error("❌ No access token received", response);
-        }
-      },
-    });
-
-    tokenClient.requestAccessToken();
-  };
 
   const updateConsent = (key) => {
     setConsentChecks((prev) => ({
@@ -46,7 +21,7 @@ const ConsentPage = () => {
     }));
   };
 
-  const canInitialize = consentGiven && driveAccessToken !== null;
+  const canInitialize = consentGiven;
 
   return (
     <div className="consent-page">
@@ -65,7 +40,6 @@ const ConsentPage = () => {
           Operator must confirm all 4 items before proceeding
         </p>
 
-        {/* Consent checkboxes */}
         <label className="consent-check">
           <input
             type="checkbox"
@@ -99,31 +73,9 @@ const ConsentPage = () => {
             checked={consentChecks.dataStorage}
             onChange={() => updateConsent("dataStorage")}
           />
-          Participant understands data will be stored securely in the lab Google Drive
+          Participant understands data will be stored securely on the lab local storage drive
         </label>
 
-        {/* Google Sign-in */}
-        <div className="google-block">
-          <button
-            type="button"
-            className="google-btn"
-            onClick={signInWithGoogle}
-          >
-            Sign in with Google (Drive Access)
-          </button>
-
-          <div
-            className={`google-status ${
-              driveAccessToken ? "ok-status" : "bad-status"
-            }`}
-          >
-            {driveAccessToken
-              ? "Drive access granted ✓"
-              : "Drive access not granted"}
-          </div>
-        </div>
-
-        {/* Next Button */}
         <button
           type="button"
           className="consent-submit"

@@ -1,5 +1,4 @@
 import asyncio
-import csv
 import json
 import signal
 import socket
@@ -9,8 +8,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, Set
 from uuid import uuid4
-from zipfile import ZIP_DEFLATED, ZipFile
-
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -38,10 +35,6 @@ MODULE_LABELS = {
     9: "Upper Back",
     10: "Lower Back",
 }
-
-OUTPUT_DIR = Path(__file__).resolve().parent / "output"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
 
 def iso_utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
@@ -109,68 +102,21 @@ class SessionManager:
             self.active = False
             if not was_active:
                 return {"active": False, "export": self.last_export}
-            export = self._export_csv_zip()
-            self.last_export = export
-            return {"active": False, "export": export}
-
-    def _export_csv_zip(self) -> dict[str, Any]:
-        ended_at = iso_utc_now()
-        if not self.frames:
-            return {
-                "status": "empty",
+            ended_at = iso_utc_now()
+            export = {
+                "status": "ready",
+                "format": "in_memory_frames_only",
+                "note": "Use data_collection_server.py for offline E:\\SensorData\\Sessions export",
                 "participantId": self.participant_id,
+                "participantName": self.participant_name,
                 "sessionId": self.session_id,
                 "startedAt": self.started_at,
                 "endedAt": ended_at,
-                "frameCount": 0,
+                "frameCount": len(self.frames),
+                "moduleIds": sorted(self.frames_seen_modules),
             }
-
-        module_ids = sorted(self.frames_seen_modules)
-        header = ["timestamp"]
-        for mid in module_ids:
-            header.extend([f"m{mid}_qr", f"m{mid}_qi", f"m{mid}_qj", f"m{mid}_qk", f"m{mid}_v", f"m{mid}_soc", f"m{mid}_rssi"])
-
-        base_name = f"{self.participant_name}_{self.participant_id}_{self.session_id}"
-        csv_path = OUTPUT_DIR / f"{base_name}.csv"
-        zip_path = OUTPUT_DIR / f"{base_name}.zip"
-
-        with csv_path.open("w", newline="", encoding="utf-8") as f:
-            writer = csv.writer(f)
-            writer.writerow(header)
-            for frame in self.frames:
-                row = [frame.get("timestamp", iso_utc_now())]
-                modules = frame.get("modules", {})
-                for mid in module_ids:
-                    module = modules.get(str(mid)) or {}
-                    row.extend(
-                        [
-                            module.get("qr"),
-                            module.get("qi"),
-                            module.get("qj"),
-                            module.get("qk"),
-                            module.get("v"),
-                            module.get("soc"),
-                            module.get("rssi"),
-                        ]
-                    )
-                writer.writerow(row)
-
-        with ZipFile(zip_path, "w", compression=ZIP_DEFLATED) as zf:
-            zf.write(csv_path, arcname=csv_path.name)
-
-        return {
-            "status": "ready",
-            "participantId": self.participant_id,
-            "participantName": self.participant_name,
-            "sessionId": self.session_id,
-            "startedAt": self.started_at,
-            "endedAt": ended_at,
-            "frameCount": len(self.frames),
-            "moduleIds": module_ids,
-            "csvPath": str(csv_path),
-            "zipPath": str(zip_path),
-            "zipFileName": zip_path.name,
-        }
+            self.last_export = export
+            return {"active": False, "export": export}
 
 
 class YogaHardwareBridge:

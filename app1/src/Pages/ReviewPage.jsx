@@ -1,15 +1,12 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import CONFIG from "../config";
 import { useSession } from "../context/SessionContext";
-import { uploadSession, saveSessionLocally } from "../utils/driveUpload";
-import { addToQueue } from "../utils/uploadQueue";
+import { saveSessionLocally } from "../utils/sessionExport";
 import {
-  getReadyYogaRootHandle,
-  isLocalFolderPickerSupported,
-  LOCAL_YOGA_SUBDIR,
-  pickParentAndCreateYogaFolder,
-} from "../utils/localYogaFolder";
+  getSessionsRootDisplay,
+  stopOfflineSession,
+} from "../utils/sessionRecorderApi";
 import "./ReviewPage.css";
 
 function ReviewPage() {
@@ -21,209 +18,54 @@ function ReviewPage() {
     greeting,
     username,
     bumpSessionNumber,
-    driveAccessToken,
-    setDriveAccessToken,
+    offlineSessionDirectory,
+    setOfflineSessionDirectory,
   } = useSession();
 
-  const [uploadProgress, setUploadProgress] = useState({});
-  const [uploadComplete, setUploadComplete] = useState(false);
-  const [sessionFolderLink, setSessionFolderLink] = useState(null);
-  const [isOnline, setIsOnline] = useState(
-    typeof navigator !== "undefined" ? navigator.onLine : true
-  );
-  const [storageMode, setStorageMode] = useState(() =>
-    typeof navigator !== "undefined" && navigator.onLine ? "drive" : "local"
-  );
-  const [uploading, setUploading] = useState(false);
+  const [offlineFinalize, setOfflineFinalize] = useState(null);
+  const [finalizingOffline, setFinalizingOffline] = useState(false);
   const [localSaveResults, setLocalSaveResults] = useState(null);
   const [localSaving, setLocalSaving] = useState(false);
-  const [uploadResults, setUploadResults] = useState([]);
-  const [error, setError] = useState(null);
   const [copied, setCopied] = useState(false);
-  const [localYogaDirHandle, setLocalYogaDirHandle] = useState(null);
-  const [localFolderPhase, setLocalFolderPhase] = useState("loading");
-  const [localSaveMessage, setLocalSaveMessage] = useState(null);
 
-  const uploadStartedRef = useRef(false);
-  const folderInfoRef = useRef(null);
-  const localYogaDirHandleRef = useRef(null);
+  const offlineFinalizedRef = useRef(false);
 
   useEffect(() => {
-    localYogaDirHandleRef.current = localYogaDirHandle;
-  }, [localYogaDirHandle]);
-
-  useEffect(() => {
-    const goOnline = () => {
-      setIsOnline(true);
-    };
-    const goOffline = () => {
-      setIsOnline(false);
-      setStorageMode("local");
-    };
-    window.addEventListener("online", goOnline);
-    window.addEventListener("offline", goOffline);
-    return () => {
-      window.removeEventListener("online", goOnline);
-      window.removeEventListener("offline", goOffline);
-    };
-  }, []);
-
-  useEffect(() => {
+    if (!CONFIG.USE_OFFLINE_SESSION_RECORDER || offlineFinalizedRef.current) {
+      return undefined;
+    }
+    offlineFinalizedRef.current = true;
     let cancelled = false;
     (async () => {
-      if (!isLocalFolderPickerSupported()) {
-        if (!cancelled) setLocalFolderPhase("unsupported");
-        return;
-      }
-      const h = await getReadyYogaRootHandle();
-      if (cancelled) return;
-      if (h) {
-        setLocalYogaDirHandle(h);
-        setLocalFolderPhase("ready");
-      } else {
-        setLocalFolderPhase("needPick");
+      setFinalizingOffline(true);
+      try {
+        const recorded = sessionRecordings.filter((r) => !r.skipped).length;
+        const result = await stopOfflineSession({
+          participantId,
+          participantName: metadata?.username || metadata?.name,
+          posesRecorded: recorded,
+        });
+        if (!cancelled && result?.ok) {
+          setOfflineFinalize(result);
+          if (result.directory) {
+            setOfflineSessionDirectory(result.directory);
+          }
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setOfflineFinalize({
+            ok: false,
+            error: err?.message || String(err),
+          });
+        }
+      } finally {
+        if (!cancelled) setFinalizingOffline(false);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
-
-  useEffect(() => {
-    const initial = {};
-    sessionRecordings.forEach((r, i) => {
-      initial[i] = {
-        percent: r.skipped ? 100 : 0,
-        status: r.skipped ? "skipped" : "pending",
-        webViewLink: null,
-      };
-    });
-    setUploadProgress(initial);
-  }, [sessionRecordings]);
-
-  useEffect(() => {
-    if (!isOnline && sessionRecordings.length > 0) {
-      sessionRecordings.forEach((r) => {
-        if (!r.skipped) {
-          addToQueue({
-            sampleId: `${participantId}_${r.poseId}`,
-            participantId,
-            poseId: r.poseId,
-          });
-        }
-      });
-    }
-  }, [isOnline, sessionRecordings, participantId]);
-
-  const signInWithGoogle = useCallback(() => {
-    if (!window.google?.accounts?.oauth2) {
-      alert("Google Identity Services not loaded.");
-      return;
-    }
-    const tokenClient = window.google.accounts.oauth2.initTokenClient({
-      client_id: CONFIG.GOOGLE_CLIENT_ID,
-      scope: "https://www.googleapis.com/auth/drive.file",
-      callback: (response) => {
-        if (response?.access_token) {
-          setDriveAccessToken(response.access_token);
-          setError(null);
-        }
-      },
-    });
-    tokenClient.requestAccessToken();
-  }, [setDriveAccessToken]);
-
-  const runUpload = useCallback(
-    async (options = {}) => {
-      setError(null);
-      setLocalSaveMessage(null);
-      const mergedOpts = {
-        ...options,
-        localYogaDirHandle:
-          options.localYogaDirHandle !== undefined
-            ? options.localYogaDirHandle
-            : localYogaDirHandleRef.current,
-      };
-      try {
-        const result = await uploadSession(
-          sessionRecordings,
-          metadata,
-          participantId,
-          driveAccessToken,
-          (poseIndex, percent, status) => {
-            setUploadProgress((prev) => ({
-              ...prev,
-              [poseIndex]: {
-                ...prev[poseIndex],
-                percent,
-                status,
-              },
-            }));
-          },
-          mergedOpts
-        );
-
-        if (result.localSaveErrors?.length) {
-          setLocalSaveMessage(
-            `Some local copies failed: ${result.localSaveErrors.slice(0, 3).join("; ")}${
-              result.localSaveErrors.length > 3 ? "…" : ""
-            }`
-          );
-        } else if (mergedOpts.localYogaDirHandle) {
-          setLocalSaveMessage(
-            `ZIPs and session summary were saved under the “${LOCAL_YOGA_SUBDIR}” folder you chose.`
-          );
-        } else {
-          setLocalSaveMessage(null);
-        }
-
-        folderInfoRef.current = {
-          participantFolderId: result.participantFolderId,
-          sessionFolderId: result.sessionFolderId,
-        };
-
-        result.results.forEach((r) => {
-          const st = r.status;
-          setUploadProgress((prev) => ({
-            ...prev,
-            [r.index]: {
-              ...prev[r.index],
-              percent: st === "failed" ? 0 : 100,
-              status: st,
-              webViewLink: r.webViewLink || prev[r.index]?.webViewLink,
-              driveFileId: r.driveFileId || prev[r.index]?.driveFileId,
-            },
-          }));
-        });
-
-        setSessionFolderLink(result.sessionFolderLink);
-        setUploadResults(result.results);
-        setUploadComplete(true);
-      } catch (err) {
-        if (err?.status === 401) {
-          setError("Google token expired. Please re-authenticate.");
-        } else {
-          setError(`Upload failed: ${err?.message || String(err)}`);
-        }
-        throw err;
-      }
-    },
-    [sessionRecordings, metadata, participantId, driveAccessToken]
-  );
-
-  const handleUpload = useCallback(async () => {
-    setError(null);
-    setUploading(true);
-    setLocalSaveMessage(null);
-    uploadStartedRef.current = true;
-    try {
-      await runUpload();
-    } catch {
-      uploadStartedRef.current = false;
-    } finally {
-      setUploading(false);
-    }
-  }, [runUpload]);
+  }, [participantId, metadata, sessionRecordings, setOfflineSessionDirectory]);
 
   const handleLocalSave = useCallback(async () => {
     setLocalSaving(true);
@@ -239,56 +81,6 @@ function ReviewPage() {
       setLocalSaving(false);
     }
   }, [sessionRecordings, metadata, participantId]);
-
-  const handleChooseLocalYogaFolder = useCallback(async () => {
-    setError(null);
-    try {
-      const h = await pickParentAndCreateYogaFolder();
-      setLocalYogaDirHandle(h);
-      setLocalFolderPhase("ready");
-      setLocalSaveMessage(
-        `Folder “${LOCAL_YOGA_SUBDIR}” is ready. The next upload will save ZIP files there as well as to Drive.`
-      );
-    } catch (e) {
-      if (e?.name === "AbortError") return;
-      setError(e?.message || String(e));
-    }
-  }, []);
-
-  const failedIndices = useMemo(() => {
-    const fromResults = uploadResults
-      .filter((r) => r.status === "failed")
-      .map((r) => r.index);
-    if (fromResults.length > 0) return fromResults;
-    return Object.entries(uploadProgress)
-      .filter(([, v]) => v.status === "failed")
-      .map(([k]) => Number(k));
-  }, [uploadResults, uploadProgress]);
-
-  const handleRetryFailed = useCallback(() => {
-    const resume = folderInfoRef.current;
-    const opts =
-      resume && failedIndices.length > 0
-        ? { resume, onlyIndices: failedIndices }
-        : {};
-    uploadStartedRef.current = true;
-    runUpload(opts).catch(() => {
-      uploadStartedRef.current = false;
-    });
-  }, [runUpload, failedIndices]);
-
-  const handleRetryOne = useCallback(
-    (index) => {
-      const resume = folderInfoRef.current;
-      const opts =
-        resume ? { resume, onlyIndices: [index] } : {};
-      uploadStartedRef.current = true;
-      runUpload(opts).catch(() => {
-        uploadStartedRef.current = false;
-      });
-    },
-    [runUpload]
-  );
 
   const handleCopySummary = useCallback(() => {
     const payload = {
@@ -325,96 +117,6 @@ function ReviewPage() {
 
   const recordedCount = sessionRecordings.filter((r) => !r.skipped).length;
   const skippedCount = sessionRecordings.filter((r) => r.skipped).length;
-  const datasetFolderUrl = `https://drive.google.com/drive/folders/${CONFIG.YOGA_DATASET_FOLDER_ID}`;
-
-  const driveCell = (i) => {
-    const p = uploadProgress[i] || {};
-    const st = p.status || "pending";
-    if (st === "pending") {
-      return <span className="text-secondary">Waiting</span>;
-    }
-    if (st === "uploading") {
-      return (
-        <div className="progress-cell">
-          <div className="progress" style={{ height: "8px" }}>
-            <div
-              className="progress-bar progress-bar-striped progress-bar-animated"
-              style={{ width: `${p.percent || 0}%` }}
-            />
-          </div>
-          <small className="text-muted">{p.percent || 0}%</small>
-        </div>
-      );
-    }
-    if (st === "uploaded") {
-      return <span className="text-success fw-semibold">✓ Uploaded</span>;
-    }
-    if (st === "already_uploaded") {
-      return <span className="text-info fw-semibold">Already uploaded</span>;
-    }
-    if (st === "skipped") {
-      return <span className="text-secondary">Skipped</span>;
-    }
-    if (st === "failed") {
-      return <span className="text-danger fw-semibold">Failed</span>;
-    }
-    return <span className="text-secondary">—</span>;
-  };
-
-  const statusCell = (i) => {
-    const st = uploadProgress[i]?.status || "pending";
-    const map = {
-      pending: { text: "⏳ Queued", cls: "text-secondary" },
-      uploading: { text: "⬆ Uploading", cls: "text-primary" },
-      uploaded: { text: "✅ Complete", cls: "text-success" },
-      already_uploaded: { text: "✅ Complete", cls: "text-success" },
-      skipped: { text: "⏭ Skipped", cls: "text-secondary" },
-      failed: { text: "❌ Failed", cls: "text-danger" },
-    };
-    const m = map[st] || map.pending;
-    return <span className={m.cls}>{m.text}</span>;
-  };
-
-  const actionCell = (r, i) => {
-    const st = uploadProgress[i]?.status;
-    if (st === "failed") {
-      return (
-        <button
-          type="button"
-          className="btn btn-sm btn-outline-warning"
-          onClick={() => handleRetryOne(i)}
-        >
-          Retry
-        </button>
-      );
-    }
-    if (st === "uploaded" && uploadProgress[i]?.webViewLink) {
-      return (
-        <a
-          href={uploadProgress[i].webViewLink}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="drive-link small"
-        >
-          Open in Drive
-        </a>
-      );
-    }
-    if (st === "uploaded" && uploadProgress[i]?.driveFileId) {
-      const url = `https://drive.google.com/file/d/${uploadProgress[i].driveFileId}/view`;
-      return (
-        <a
-          href={url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="drive-link small"
-        >
-          Open in Drive
-        </a>
-      );
-    }
-    return null;
-  };
 
   if (!sessionRecordings.length) {
     return (
@@ -437,7 +139,7 @@ function ReviewPage() {
   return (
     <div className="review-page">
       <header className="mb-4">
-        <h1 className="h2 fw-bold">Session Review &amp; Upload</h1>
+        <h1 className="h2 fw-bold">Session Review</h1>
         <p className="lead mb-1">
           {greeting}, {username || metadata?.name || "participant"}
         </p>
@@ -449,194 +151,51 @@ function ReviewPage() {
         </div>
       </header>
 
-      {!isOnline && (
-        <div className="alert alert-warning d-flex align-items-center gap-2 mb-3">
-          <span>📡</span>
-          <span>
-            <strong>No internet connection.</strong> Files will be saved to your local computer. You
-            can upload to Google Drive later when connected.
-          </span>
+      {CONFIG.USE_OFFLINE_SESSION_RECORDER && (
+        <div className="alert alert-success mb-4" role="status">
+          <h2 className="h5 fw-bold mb-2">Session saved locally</h2>
+          {finalizingOffline ? (
+            <p className="mb-0">Finalizing video, IMU JSON, and landmarks on disk…</p>
+          ) : offlineFinalize?.ok === false ? (
+            <p className="mb-0 text-danger">
+              Finalize error: {offlineFinalize.error}. Ensure{" "}
+              <code>python backend/data_collection_server.py</code> is running, then refresh.
+            </p>
+          ) : (
+            <>
+              <p className="mb-1">
+                <strong>Folder:</strong>{" "}
+                <code className="user-select-all">
+                  {offlineFinalize?.directory ||
+                    offlineSessionDirectory ||
+                    getSessionsRootDisplay()}
+                </code>
+              </p>
+              <p className="mb-0 small">
+                Contains <code>video.webm</code>, <code>imu.json</code>,{" "}
+                <code>landmarks.json</code>, and <code>metadata.json</code> in one folder.
+                Optional cloud backup: run{" "}
+                <code>python backend/upload_sessions_to_gdrive.py</code> manually when ready.
+              </p>
+            </>
+          )}
         </div>
       )}
 
-      {error && (
-        <div className="alert alert-danger d-flex flex-wrap align-items-center gap-2 justify-content-between">
-          <span>{error}</span>
-          <button
-            type="button"
-            className="btn btn-sm btn-outline-light"
-            onClick={signInWithGoogle}
-          >
-            Re-authenticate with Google
-          </button>
-        </div>
-      )}
-
-      {!driveAccessToken && (
-        <div className="alert alert-info">
-          <p className="mb-2">Google Drive access is required to upload.</p>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={signInWithGoogle}
-          >
-            Sign in with Google (Drive Access)
-          </button>
-        </div>
-      )}
-
-      {localFolderPhase === "unsupported" && (
-        <div className="alert alert-secondary" role="status">
-          Local folder backup uses a browser feature not available here (try Chrome or Edge).
-          Cloud upload still works.
-        </div>
-      )}
-
-      {localFolderPhase === "needPick" && isLocalFolderPickerSupported() && (
-        <div className="alert alert-primary d-flex flex-wrap align-items-center justify-content-between gap-2">
-          <span>
-            Choose where to keep a <strong>{LOCAL_YOGA_SUBDIR}</strong> folder on this PC. The
-            app creates it once; every upload saves the same ZIPs there and to Drive.
-          </span>
-          <button
-            type="button"
-            className="btn btn-light text-primary fw-semibold"
-            onClick={() => void handleChooseLocalYogaFolder()}
-          >
-            Choose folder for local saves…
-          </button>
-        </div>
-      )}
-
-      {localFolderPhase === "ready" && (
-        <div className="alert alert-success py-2 mb-3" role="status">
-          Local backup on: a <strong>{LOCAL_YOGA_SUBDIR}</strong> folder inside the directory you
-          selected. Uploads write ZIPs and the session summary there automatically.
-          <button
-            type="button"
-            className="btn btn-sm btn-outline-success ms-2"
-            onClick={() => void handleChooseLocalYogaFolder()}
-          >
-            Change location…
-          </button>
-        </div>
-      )}
-
-      {localSaveMessage && (
-        <div className="alert alert-light border small mb-3" role="status">
-          {localSaveMessage}
-        </div>
-      )}
-
-      <div className="storage-mode-selector mb-4">
-        <p className="fw-bold mb-2">Choose where to save your session data:</p>
-        <div className="d-flex gap-3 flex-wrap">
-          <button
-            type="button"
-            className={`storage-btn ${storageMode === "drive" ? "storage-btn--active" : ""}`}
-            onClick={() => setStorageMode("drive")}
-            disabled={!isOnline || !driveAccessToken}
-          >
-            ☁️ Google Drive
-            {(!isOnline || !driveAccessToken) && (
-              <span className="storage-btn__note">
-                {!isOnline ? "(offline)" : "(not signed in)"}
-              </span>
-            )}
-          </button>
-
-          <button
-            type="button"
-            className={`storage-btn ${storageMode === "local" ? "storage-btn--active" : ""}`}
-            onClick={() => setStorageMode("local")}
-          >
-            💾 Save to Local Folder
-            <span className="storage-btn__note">(works offline)</span>
-          </button>
-
-          <button
-            type="button"
-            className={`storage-btn ${storageMode === "both" ? "storage-btn--active" : ""}`}
-            onClick={() => setStorageMode("both")}
-            disabled={!isOnline || !driveAccessToken}
-          >
-            ☁️ + 💾 Both
-            <span className="storage-btn__note">(Drive + local backup)</span>
-          </button>
-        </div>
-      </div>
-
-      {storageMode === "drive" && (
-        <button
-          type="button"
-          className="btn btn-primary btn-lg w-100 mb-3"
-          onClick={() => void handleUpload()}
-          disabled={uploading || !driveAccessToken}
-        >
-          {uploading ? "Uploading to Drive..." : "☁️ Upload to Google Drive"}
-        </button>
-      )}
-
-      {storageMode === "local" && (
-        <button
-          type="button"
-          className="btn btn-success btn-lg w-100 mb-3"
-          onClick={() => void handleLocalSave()}
-          disabled={localSaving}
-        >
-          {localSaving ? "Saving..." : "💾 Save to Local Folder"}
-        </button>
-      )}
-
-      {storageMode === "both" && (
-        <div className="d-flex flex-column gap-2 mb-3">
-          <button
-            type="button"
-            className="btn btn-primary btn-lg w-100"
-            onClick={() => void handleUpload()}
-            disabled={uploading || !driveAccessToken}
-          >
-            {uploading ? "Uploading..." : "☁️ Upload to Google Drive"}
-          </button>
+      {!CONFIG.USE_OFFLINE_SESSION_RECORDER && (
+        <div className="mb-4">
           <button
             type="button"
             className="btn btn-success btn-lg w-100"
             onClick={() => void handleLocalSave()}
             disabled={localSaving}
           >
-            {localSaving ? "Saving..." : "💾 Also Save Local Backup"}
+            {localSaving ? "Saving…" : "Export session ZIPs to folder"}
           </button>
-        </div>
-      )}
-
-      {localSaveResults?.success && (
-        <div className="alert alert-success mt-3 mb-3">
-          <strong>✅ Saved locally!</strong>
-          <div>
-            Folder: <code>{localSaveResults.folderName}</code>
-          </div>
-          <div className="mt-2">
-            {localSaveResults.results?.map((r, idx) => (
-              <div key={`${r.poseName}-${idx}`}>
-                {r.status === "saved_locally" ? "✅" : r.status === "skipped" ? "⏭" : "❌"} {r.poseName}
-                {r.fileName && (
-                  <span className="text-muted ms-2 small">{r.fileName}</span>
-                )}
-              </div>
-            ))}
-          </div>
-          {isOnline && driveAccessToken && (
-            <div className="mt-2">
-              <button
-                type="button"
-                className="btn btn-sm btn-outline-primary"
-                onClick={() => {
-                  setStorageMode("drive");
-                  void handleUpload();
-                }}
-              >
-                Also upload to Drive now
-              </button>
+          {localSaveResults?.success && (
+            <div className="alert alert-success mt-3 mb-0">
+              <strong>Saved locally.</strong> Folder:{" "}
+              <code>{localSaveResults.folderName}</code>
             </div>
           )}
         </div>
@@ -647,117 +206,54 @@ function ReviewPage() {
           <thead className="table-light">
             <tr>
               <th>Pose</th>
-              <th>Local disk</th>
               <th>Frames</th>
-              <th>Drive Upload</th>
               <th>Status</th>
-              <th>Action</th>
             </tr>
           </thead>
           <tbody>
-            {sessionRecordings.map((r, i) => (
-              <tr key={`${r.poseId}-${i}`}>
-                <td>
-                  <div className="fw-medium">{r.poseName}</div>
-                  <div className="small text-muted fst-italic">{r.sanskrit}</div>
-                </td>
-                <td>
-                  {r.skipped ? (
-                    <span className="text-secondary">—</span>
-                  ) : localFolderPhase !== "ready" ? (
-                    <span className="text-muted small">Cloud only</span>
-                  ) : uploadProgress[i]?.status === "uploaded" ? (
-                    <span className="text-success small">✓ + disk</span>
-                  ) : uploadProgress[i]?.status === "already_uploaded" ? (
-                    <span className="text-muted small">Cloud only</span>
-                  ) : uploadProgress[i]?.status === "failed" ? (
-                    <span className="text-muted small">—</span>
-                  ) : (
-                    <span className="text-muted small">Pending</span>
-                  )}
-                </td>
-                <td>
-                  {r.skipped
-                    ? "—"
-                    : `${(() => {
-                        const fc =
-                          typeof r.frameCount === "number"
-                            ? r.frameCount
-                            : r.landmarks?.length ?? 0;
-                        return fc > 0 ? fc : 0;
-                      })()} frames`}
-                </td>
-                <td>{driveCell(i)}</td>
-                <td>{statusCell(i)}</td>
-                <td>{actionCell(r, i)}</td>
-              </tr>
-            ))}
+            {sessionRecordings.map((r, i) => {
+              const frameCount =
+                typeof r.frameCount === "number"
+                  ? r.frameCount
+                  : r.landmarks?.length ?? 0;
+              return (
+                <tr key={`${r.poseId}-${i}`}>
+                  <td>
+                    <div className="fw-medium">{r.poseName}</div>
+                    <div className="small text-muted fst-italic">{r.sanskrit}</div>
+                  </td>
+                  <td>
+                    {r.skipped ? "—" : `${frameCount > 0 ? frameCount : 0} frames`}
+                  </td>
+                  <td>
+                    {r.skipped ? (
+                      <span className="text-secondary">Skipped</span>
+                    ) : r.storedOffline ? (
+                      <span className="text-success">Saved on disk</span>
+                    ) : (
+                      <span className="text-success">Recorded</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
 
-      {uploadComplete && (
-        <div className="summary-card">
-          <h2 className="h4 fw-bold mb-3">
-            🎉 Session upload finished
-            {failedIndices.length === 0
-              ? " — all files uploaded!"
-              : ` — ${failedIndices.length} file(s) need attention`}
-          </h2>
-          <ul className="list-unstyled mb-3">
-            <li>
-              <strong>Participant ID:</strong>{" "}
-              <span className="font-monospace">{participantId}</span>
-            </li>
-            <li>
-              <strong>Date:</strong> {new Date().toLocaleString()}
-            </li>
-            <li>
-              <strong>Poses recorded:</strong> {recordedCount}
-            </li>
-            <li>
-              <strong>Poses skipped:</strong> {skippedCount}
-            </li>
-            <li>
-              <strong>Drive folder:</strong>{" "}
-              {sessionFolderLink ? (
-                <a
-                  href={sessionFolderLink}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="drive-link"
-                >
-                  Open session folder
-                </a>
-              ) : (
-                "—"
-              )}
-            </li>
-            <li className="mt-2">
-              <a
-                href={datasetFolderUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="drive-link"
-              >
-                Open YogaDataset folder
-              </a>
-            </li>
-          </ul>
-        </div>
-      )}
+      <div className="summary-card mt-4">
+        <h2 className="h5 fw-bold mb-3">Session summary</h2>
+        <ul className="list-unstyled mb-0">
+          <li>
+            <strong>Poses recorded:</strong> {recordedCount}
+          </li>
+          <li>
+            <strong>Poses skipped:</strong> {skippedCount}
+          </li>
+        </ul>
+      </div>
 
       <div className="d-flex flex-wrap gap-2 mt-4">
-        {failedIndices.length > 0 && (
-          <button
-            type="button"
-            className="btn btn-warning"
-            onClick={handleRetryFailed}
-            disabled={!driveAccessToken}
-          >
-            Retry Failed
-          </button>
-        )}
         <button
           type="button"
           className="btn btn-outline-secondary"
@@ -765,11 +261,6 @@ function ReviewPage() {
         >
           {copied ? "Copied! ✓" : "Copy Session Summary"}
         </button>
-        {driveAccessToken && isOnline && (
-          <button type="button" className="btn btn-primary" onClick={() => void handleUpload()}>
-            Run upload again
-          </button>
-        )}
         <button
           type="button"
           className="btn btn-outline-danger ms-auto"

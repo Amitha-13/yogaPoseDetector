@@ -8,6 +8,7 @@ import {
 } from "../utils/recorder";
 import { initMediaPipe } from "../utils/mediapipeSetup";
 import CONFIG from "../config";
+import { openLandmarksWebSocket } from "../utils/sessionRecorderApi";
 import "./SequencerPage.css";
 
 const RECORDING_DURATION_SEC = 45;
@@ -135,6 +136,7 @@ function SequencerPage() {
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [confirmRerecordIndex, setConfirmRerecordIndex] = useState(null);
   const [categoryFilter, setCategoryFilter] = useState("All");
+  const [isFinalizing, setIsFinalizing] = useState(false);
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -146,11 +148,12 @@ function SequencerPage() {
   const recordingCancelRef = useRef(null);
   const selectedPoseIndexRef = useRef(null);
   const wsRef = useRef(null);
+  const finalizeRecordingRef = useRef(null);
 
   useEffect(() => {
-    // Live Data Bridge: Initialize WebSocket connection to backend
-    const ws = new WebSocket("ws://localhost:5001/ws/landmarks");
-    ws.onopen = () => console.log("Landmark WebSocket connected");
+    if (!CONFIG.USE_OFFLINE_SESSION_RECORDER) return undefined;
+    const ws = openLandmarksWebSocket();
+    ws.onopen = () => console.log("Landmark WebSocket connected (offline recorder)");
     ws.onerror = (e) => console.error("Landmark WebSocket error", e);
     ws.onclose = () => console.log("Landmark WebSocket closed");
     wsRef.current = ws;
@@ -205,7 +208,7 @@ function SequencerPage() {
         (r) =>
           r.poseName === poseName &&
           !r.skipped &&
-          r.videoBlob != null
+          (r.storedOffline === true || r.videoBlob != null)
       ),
     [sessionRecordings]
   );
@@ -298,6 +301,7 @@ function SequencerPage() {
     setRecordPhase("getReady");
     setGetReadyCountdown(3);
     setRecordingSeconds(0);
+    setIsFinalizing(false);
     landmarkBufferRef.current = [];
   }, []);
 
@@ -372,6 +376,7 @@ function SequencerPage() {
 
       startRecording(streamRef.current, {
         sessionTZero: sessionTZero ?? undefined,
+        videoElement: videoRef.current,
       });
 
       setRecordPhase("recording");
@@ -408,6 +413,7 @@ function SequencerPage() {
     const duration = pose.duration || RECORDING_DURATION_SEC;
 
     let cancelled = false;
+    let finalized = false;
 
     landmarkBufferRef.current = [];
 
@@ -428,11 +434,18 @@ function SequencerPage() {
             (rawLandmarks) => {
               const ws = wsRef.current;
               if (ws && ws.readyState === WebSocket.OPEN) {
+                const ts = Date.now() / 1000;
                 ws.send(
                   JSON.stringify({
-                    timestamp: Date.now(),
-                    poseIndex,
-                    landmarks: rawLandmarks,
+                    timestamp: ts,
+                    frame_id: landmarkBufferRef.current.length,
+                    pose_id: pose.id,
+                    landmarks: rawLandmarks.map((lm) => ({
+                      x: lm.x,
+                      y: lm.y,
+                      z: lm.z ?? 0,
+                      visibility: lm.visibility ?? 0,
+                    })),
                   })
                 );
               }
@@ -458,31 +471,28 @@ function SequencerPage() {
       );
     }, 200);
 
-    const end = window.setTimeout(async () => {
-      if (cancelled) return;
+    const finalizeRecording = async () => {
+      if (cancelled || finalized) return;
+      finalized = true;
+      cancelled = true;
 
       window.clearInterval(tick);
+      window.clearTimeout(end);
+
+      setIsFinalizing(true);
 
       if (mediaPipeCleanupRef.current) {
         mediaPipeCleanupRef.current();
         mediaPipeCleanupRef.current = null;
       }
 
-      const poseLandmarks = [
-        ...landmarkBufferRef.current,
-      ];
+      const poseLandmarks = [...landmarkBufferRef.current];
 
-      const { videoBlob, imuPackets } = await stopRecording();
+      const { videoBlob, imuPackets, storedOffline } = await stopRecording();
 
-      const recordingStartTime = recordingStartRef.current;
-      const sessionTz = sessionTZero ?? recordingStartTime;
-      const poseStartRel = recordingStartTime - sessionTz;
-      const poseEndRel = poseStartRel + duration * 1000;
-
-      const poseIMU = imuPackets.filter(
-        (p) =>
-          p.relative_timestamp >= poseStartRel &&
-          p.relative_timestamp <= poseEndRel
+      const actualDuration = Math.min(
+        Math.max(1, Math.floor((Date.now() - start) / 1000)),
+        duration
       );
 
       upsertSessionRecording({
@@ -492,13 +502,14 @@ function SequencerPage() {
         sanskrit: pose.sanskrit,
         category: pose.category,
         variation: pose.variation || "",
-        videoBlob,
-        imuPackets: poseIMU,
-        landmarks: poseLandmarks,
-        imuSource: "BNO08x_real_udp",
+        videoBlob: storedOffline ? null : videoBlob,
+        imuPackets: storedOffline ? [] : imuPackets,
+        landmarks: storedOffline ? [] : poseLandmarks,
+        storedOffline: Boolean(storedOffline),
+        imuSource: storedOffline ? "offline_udp_json" : "BNO08x_real_udp",
         frameCount: poseLandmarks.length,
         recordedAt: new Date().toISOString(),
-        duration,
+        duration: actualDuration,
         skipped: false,
         sensorConfig: {
           totalSlots: CONFIG.TOTAL_SENSOR_COUNT,
@@ -511,22 +522,31 @@ function SequencerPage() {
           placeholderIds: CONFIG.SENSOR_SLOTS.filter(
             (s) => s.status === "placeholder"
           ).map((s) => s.id),
-          connectedDuring: Object.keys(imuPackets[0]?.devices || {}),
+          connectedDuring: storedOffline
+            ? CONFIG.SENSOR_SLOTS.filter((s) => s.status === "active").map((s) => s.id)
+            : Object.keys(imuPackets[0]?.devices || {}),
         },
       });
 
+      setIsFinalizing(false);
       setRecordPhase("saved");
+    };
+
+    finalizeRecordingRef.current = finalizeRecording;
+
+    const end = window.setTimeout(() => {
+      void finalizeRecording();
     }, duration * 1000);
 
     recordingCancelRef.current = () => {
       cancelled = true;
-
       window.clearInterval(tick);
       window.clearTimeout(end);
     };
 
     return () => {
       cancelled = true;
+      finalizeRecordingRef.current = null;
 
       cancelAnimationFrame(initHandle);
 
@@ -912,6 +932,15 @@ function SequencerPage() {
                       }}
                     />
                   </div>
+
+                  <button
+                    type="button"
+                    className="sequencer-btn-stop"
+                    disabled={isFinalizing}
+                    onClick={() => void finalizeRecordingRef.current?.()}
+                  >
+                    {isFinalizing ? "Finalizing…" : "Stop Recording"}
+                  </button>
                 </div>
               </div>
             )}

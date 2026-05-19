@@ -72,14 +72,18 @@ const SENSOR_SLOTS = [
 ];
 
 const CONFIG = {
-  GOOGLE_CLIENT_ID: "YOUR_CLIENT_ID_HERE",
-  YOGA_DATASET_FOLDER_ID: "YOUR_FOLDER_ID_HERE",
   LAB_NAME: "Your Lab Name",
   INSTITUTION: "Your Institution",
-  FLASK_BASE_URL: "http://127.0.0.1:5000",
-  FLASK_DATA_URL: "http://127.0.0.1:5000/data-with-ts",
-  FLASK_SYNC_URL: "http://127.0.0.1:5000/sync",
-  IMU_POLL_MS: 20,
+  /** Offline session recorder (python data_collection_server.py) */
+  SESSION_RECORDER_URL: "http://127.0.0.1:5001",
+  SESSIONS_ROOT_DISPLAY: "E:\\SensorData\\Sessions",
+  USE_OFFLINE_SESSION_RECORDER: true,
+  VIDEO_STREAM_FPS: 24,
+  /** Legacy Flask bridge (optional preview only) */
+  FLASK_BASE_URL: "http://127.0.0.1:5001",
+  FLASK_DATA_URL: "http://127.0.0.1:5001",
+  FLASK_SYNC_URL: "",
+  IMU_POLL_MS: 1000,
   SENSOR_SLOTS,
   ACTIVE_SENSOR_COUNT: 7,
   TOTAL_SENSOR_COUNT: 10,

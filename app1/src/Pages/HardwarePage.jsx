@@ -2,11 +2,24 @@ import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSession } from "../context/SessionContext";
 import CONFIG from "../config";
+import {
+  checkRecorderHealth,
+  getSessionsRootDisplay,
+  startOfflineSession,
+} from "../utils/sessionRecorderApi";
 import "./HardwarePage.css";
 
 function HardwarePage() {
   const navigate = useNavigate();
-  const { setTZero, setCameraStream, participantId, metadata, username, greeting } = useSession();
+  const {
+    setTZero,
+    setCameraStream,
+    setOfflineSessionDirectory,
+    participantId,
+    metadata,
+    username,
+    greeting,
+  } = useSession();
 
   const [stream, setStream] = useState(null);
   const [cameraError, setCameraError] = useState(null);
@@ -14,6 +27,7 @@ function HardwarePage() {
   const [calibrationDone, setCalibrationDone] = useState(false);
   const [imuDevices, setImuDevices] = useState({});
   const [flaskReachable, setFlaskReachable] = useState(false);
+  const [recorderReachable, setRecorderReachable] = useState(false);
   const [startupState, setStartupState] = useState("idle");
   const [startupError, setStartupError] = useState("");
   const [startupProgress, setStartupProgress] = useState([]);
@@ -66,30 +80,70 @@ function HardwarePage() {
   }, [stream]);
 
   useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!CONFIG.USE_OFFLINE_SESSION_RECORDER) {
+        if (!cancelled) setRecorderReachable(false);
+        return;
+      }
+      const ok = await checkRecorderHealth();
+      if (!cancelled) setRecorderReachable(ok);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!dataUrl) {
       setFlaskReachable(false);
       return;
     }
 
     let cancelled = false;
-    const pollMs = Math.max(10, Number(CONFIG.IMU_POLL_MS) || 20);
+    const statusUrl = `${dataUrl}/debug/imu`;
+    const pollMs = Math.max(500, Number(CONFIG.IMU_POLL_MS) || 1000);
 
     const poll = async () => {
       try {
-        const res = await fetch(dataUrl);
+        const res = await fetch(statusUrl, { cache: "no-store" });
         if (cancelled) return;
         if (res.ok) {
           const data = await res.json();
           setFlaskReachable(true);
-          setImuDevices(
-            data.devices && typeof data.devices === "object" ? data.devices : {}
-          );
+
+          const normalized = {};
+          if (data && typeof data === "object") {
+            Object.keys(data).forEach((deviceId) => {
+              const device = data[deviceId];
+              if (device && typeof device === "object") {
+                normalized[deviceId] = {
+                  ...device,
+                  online: device.online === true,
+                  packet_count:
+                    typeof device.packet_count === "number"
+                      ? device.packet_count
+                      : null,
+                  voltage:
+                    typeof device.voltage === "number"
+                      ? device.voltage
+                      : null,
+                  rssi: typeof device.rssi === "number" ? device.rssi : null,
+                  lastSeen: Date.now(),
+                };
+              }
+            });
+          }
+
+          setImuDevices(normalized);
         } else {
           setFlaskReachable(false);
+          setImuDevices({});
         }
       } catch {
         if (!cancelled) {
           setFlaskReachable(false);
+          setImuDevices({});
         }
       }
     };
@@ -130,11 +184,21 @@ function HardwarePage() {
       }
       addStartupStep("MediaPipe initialized", true);
 
+      if (CONFIG.USE_OFFLINE_SESSION_RECORDER) {
+        const recorderOk = await checkRecorderHealth();
+        if (!recorderOk) {
+          throw new Error(
+            "Offline session recorder is not running. Start: python backend/data_collection_server.py"
+          );
+        }
+        addStartupStep("Offline recorder connected", true, getSessionsRootDisplay());
+      }
+
       addStartupStep(
         "IMU sensors (optional)",
         true,
-        Object.keys(imuDevices).length > 0
-          ? `${Object.keys(imuDevices).length} live`
+        liveCount > 0
+          ? `${liveCount} live (UDP :5000)`
           : "none — video/landmarks only"
       );
 
@@ -161,11 +225,10 @@ function HardwarePage() {
       }
       addStartupStep("Flask bridge checked", flaskOk || flaskReachable, flaskReachable ? "polling data" : "check network");
 
-      const driveAvailable = Boolean(window.google?.accounts?.oauth2);
       addStartupStep(
-        "Drive upload availability checked",
-        driveAvailable,
-        driveAvailable ? "Google APIs loaded" : "upload can be done later on Review page"
+        "Local session storage",
+        true,
+        `sessions saved to ${getSessionsRootDisplay()}`
       );
 
       if (!calibrationDone) {
@@ -178,7 +241,18 @@ function HardwarePage() {
       setTZero(t0);
       setCameraStream(stream);
 
-      if (syncUrl) {
+      if (CONFIG.USE_OFFLINE_SESSION_RECORDER) {
+        const started = await startOfflineSession({
+          tZero: t0 / 1000,
+          participantId,
+          participantName: username || metadata?.username || metadata?.name,
+          sessionNumber: metadata?.sessionNumber,
+          videoFps: 30,
+        });
+        if (started?.directory) {
+          setOfflineSessionDirectory(started.directory);
+        }
+      } else if (syncUrl) {
         await fetch(syncUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -196,7 +270,7 @@ function HardwarePage() {
 
   const systemsReady = cameraReady && calibrationDone;
 
-  const liveCount = Object.keys(imuDevices).length;
+  const liveCount = Object.values(imuDevices).filter((device) => device?.online === true).length;
   const missingCount = Math.max(0, CONFIG.ACTIVE_SENSOR_COUNT - liveCount);
   const reservedCount = CONFIG.TOTAL_SENSOR_COUNT - CONFIG.ACTIVE_SENSOR_COUNT;
 
@@ -281,7 +355,7 @@ function HardwarePage() {
               <div className="sensor-grid">
                 {CONFIG.SENSOR_SLOTS.map((slot) => {
                   const liveData = imuDevices[slot.id];
-                  const isLive = liveData !== undefined;
+                  const isLive = liveData?.online === true;
                   const cardVariant = isLive
                     ? "live"
                     : slot.status === "placeholder"
@@ -305,7 +379,7 @@ function HardwarePage() {
                             ? "🟢 Live"
                             : slot.status === "placeholder"
                               ? "⬜ Reserved"
-                              : "🔴 No signal"}
+                              : "🔴 Disconnected"}
                         </span>
                       </div>
 
@@ -314,19 +388,13 @@ function HardwarePage() {
                       {isLive && (
                         <div className="sensor-data">
                           <div>
-                            🔋{" "}
-                            {typeof liveData.soc === "number"
-                              ? `${liveData.soc.toFixed(0)}%`
-                              : "—"}
+                            🔋 {liveData.voltage != null ? `${liveData.voltage.toFixed(2)} V` : "—"}
                           </div>
                           <div>
                             📶 {liveData.rssi != null ? `${liveData.rssi} dBm` : "—"}
                           </div>
                           <div>
-                            qr:{" "}
-                            {typeof liveData.qr === "number"
-                              ? liveData.qr.toFixed(3)
-                              : "—"}
+                            📦 {liveData.packet_count != null ? liveData.packet_count : "—"}
                           </div>
                         </div>
                       )}

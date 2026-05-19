@@ -419,6 +419,29 @@
   transition: width 0.2s linear;
 }
 
+.sequencer-btn-stop {
+  margin-top: 16px;
+  padding: 12px 28px;
+  border: 2px solid #fff;
+  border-radius: 8px;
+  background: rgba(220, 38, 38, 0.85);
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  width: 100%;
+  max-width: 280px;
+}
+
+.sequencer-btn-stop:hover:not(:disabled) {
+  background: rgba(185, 28, 28, 0.95);
+}
+
+.sequencer-btn-stop:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .sequencer-saved-banner {
   display: inline-block;
   padding: 14px 24px;
