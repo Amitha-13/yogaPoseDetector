@@ -29,6 +29,8 @@ const defaultConsentChecks = {
   dataStorage: false,
 };
 
+const HARDWARE_CALIBRATION_SESSION_KEY = "yoga_hardware_calibration_done";
+
 export const SessionContextProvider = ({ children }) => {
   const [username, setUsernameState] = useState(() => {
     if (typeof localStorage === "undefined") return "";
@@ -49,6 +51,23 @@ export const SessionContextProvider = ({ children }) => {
   const [tZero, setTZero] = useState(null);
   const [cameraStream, setCameraStream] = useState(null);
   const [offlineSessionDirectory, setOfflineSessionDirectory] = useState(null);
+  const [hardwareCalibrationConfirmed, setHardwareCalibrationConfirmedState] = useState(
+    () =>
+      typeof sessionStorage !== "undefined" &&
+      sessionStorage.getItem(HARDWARE_CALIBRATION_SESSION_KEY) === "1"
+  );
+
+  const setHardwareCalibrationConfirmed = (value) => {
+    const ok = Boolean(value);
+    setHardwareCalibrationConfirmedState(ok);
+    if (typeof sessionStorage !== "undefined") {
+      if (ok) {
+        sessionStorage.setItem(HARDWARE_CALIBRATION_SESSION_KEY, "1");
+      } else {
+        sessionStorage.removeItem(HARDWARE_CALIBRATION_SESSION_KEY);
+      }
+    }
+  };
 
   const consentGiven = Object.values(consentChecks).every(Boolean);
   const greeting = getGreetingByTime();
@@ -96,6 +115,8 @@ export const SessionContextProvider = ({ children }) => {
       setCameraStream,
       offlineSessionDirectory,
       setOfflineSessionDirectory,
+      hardwareCalibrationConfirmed,
+      setHardwareCalibrationConfirmed,
     }),
     [
       operatorInfo,
@@ -111,6 +132,7 @@ export const SessionContextProvider = ({ children }) => {
       tZero,
       cameraStream,
       offlineSessionDirectory,
+      hardwareCalibrationConfirmed,
     ]
   );
 

@@ -15,6 +15,8 @@ function HardwarePage() {
     setTZero,
     setCameraStream,
     setOfflineSessionDirectory,
+    hardwareCalibrationConfirmed,
+    setHardwareCalibrationConfirmed,
     participantId,
     metadata,
     username,
@@ -24,7 +26,7 @@ function HardwarePage() {
   const [stream, setStream] = useState(null);
   const [cameraError, setCameraError] = useState(null);
   const [cameraReady, setCameraReady] = useState(false);
-  const [calibrationDone, setCalibrationDone] = useState(false);
+  const [calibrationDone, setCalibrationDone] = useState(hardwareCalibrationConfirmed);
   const [imuDevices, setImuDevices] = useState({});
   const [flaskReachable, setFlaskReachable] = useState(false);
   const [recorderReachable, setRecorderReachable] = useState(false);
@@ -78,6 +80,10 @@ function HardwarePage() {
       }
     };
   }, [stream]);
+
+  useEffect(() => {
+    setCalibrationDone(hardwareCalibrationConfirmed);
+  }, [hardwareCalibrationConfirmed]);
 
   useEffect(() => {
     let cancelled = false;
@@ -429,7 +435,10 @@ function HardwarePage() {
                 type="button"
                 className="btn btn-success w-100"
                 disabled={calibrationDone}
-                onClick={() => setCalibrationDone(true)}
+                onClick={() => {
+                  setCalibrationDone(true);
+                  setHardwareCalibrationConfirmed(true);
+                }}
               >
                 {calibrationDone ? "Calibration Complete ✓" : "Confirm Calibration ✓"}
               </button>

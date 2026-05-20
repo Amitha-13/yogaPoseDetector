@@ -18,6 +18,7 @@ import SequencerPage from "./Pages/SequencerPage";
 import ReviewPage from "./Pages/ReviewPage";
 import PracticeHomePage from "./Pages/Practice/PracticeHomePage";
 import PracticeSessionPage from "./Pages/Practice/PracticeSessionPage";
+import SensorStatusStrip from "./Components/SensorStatusStrip";
 import { SessionContextProvider } from "./context/SessionContext";
 import { PracticeContextProvider } from "./context/PracticeContext";
 import RequireSession from "./Components/RequireSession";
@@ -29,6 +30,7 @@ const App = () => {
         <PracticeContextProvider>
           <BrowserRouter>
             <Navbar />
+            <SensorStatusStrip />
             <Routes>
               <Route path="/">
                 <Route index element={<Home />} />

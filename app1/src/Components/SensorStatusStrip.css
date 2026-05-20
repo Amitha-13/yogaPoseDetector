@@ -1,0 +1,63 @@
+.sensor-strip {
+  position: sticky;
+  top: 0;
+  z-index: 1020;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px;
+  background: rgba(17, 24, 39, 0.92);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.sensor-strip__bridge {
+  color: #d1d5db;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.sensor-strip__bridge .is-live {
+  color: #34d399;
+  font-weight: 600;
+}
+
+.sensor-strip__bridge .is-down {
+  color: #f87171;
+  font-weight: 600;
+}
+
+.sensor-strip__capsules {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sensor-capsule {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 48px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 600;
+}
+
+.sensor-capsule--live {
+  background: rgba(16, 185, 129, 0.22);
+  color: #a7f3d0;
+  border: 1px solid rgba(16, 185, 129, 0.5);
+}
+
+.sensor-capsule--missing {
+  background: rgba(239, 68, 68, 0.2);
+  color: #fecaca;
+  border: 1px solid rgba(239, 68, 68, 0.5);
+}
+
+.sensor-capsule--reserved {
+  background: rgba(107, 114, 128, 0.22);
+  color: #e5e7eb;
+  border: 1px solid rgba(156, 163, 175, 0.45);
+}
