@@ -47,12 +47,26 @@ export async function stopOfflineSession(meta = {}) {
   return postJson("/session/stop", meta);
 }
 
+export async function startPoseRecording({ poseId, poseName }) {
+  return postJson("/session/pose/start", { poseId, poseName });
+}
+
+export async function completePoseRecording(metadata = {}) {
+  return postJson("/session/pose/complete", metadata);
+}
+
 /**
- * Upload browser MediaRecorder WebM blob; server merges into video.webm.
+ * Upload browser MediaRecorder WebM blob to the active pose folder as video.webm.
  * @param {Blob} webmBlob
+ * @param {{ poseId?: string, poseName?: string }} [options]
  */
-export async function uploadSessionWebm(webmBlob) {
-  const res = await fetch(`${BASE}/session/video/webm`, {
+export async function uploadSessionWebm(webmBlob, options = {}) {
+  const params = new URLSearchParams();
+  if (options.poseId) params.set("poseId", options.poseId);
+  if (options.poseName) params.set("poseName", options.poseName);
+  const qs = params.toString();
+  const url = `${BASE}/session/video/webm${qs ? `?${qs}` : ""}`;
+  const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "video/webm" },
     body: webmBlob,

@@ -8,10 +8,14 @@ import {
 } from "../utils/recorder";
 import { initMediaPipe } from "../utils/mediapipeSetup";
 import CONFIG from "../config";
-import { openLandmarksWebSocket } from "../utils/sessionRecorderApi";
+import {
+  completePoseRecording,
+  openLandmarksWebSocket,
+  startPoseRecording,
+} from "../utils/sessionRecorderApi";
 import "./SequencerPage.css";
 
-const RECORDING_DURATION_SEC = 45;
+const RECORDING_DURATION_SEC = 180;
 
 const POSES = [
   // ── STANDING POSES ──────────────────────────
@@ -20,28 +24,28 @@ const POSES = [
     name: "Mountain Pose",
     sanskrit: "Tadasana",
     category: "Standing",
-    duration: 45,
+    duration: 180,
   },
   {
     id: "STA-02",
     name: "Tree Pose",
     sanskrit: "Vrksasana",
     category: "Standing",
-    duration: 45,
+    duration: 180,
   },
   {
     id: "STA-03",
     name: "Hand-to-Foot Pose",
     sanskrit: "Padahastasana",
     category: "Standing",
-    duration: 45,
+    duration: 180,
   },
   {
     id: "STA-04-I",
     name: "Half Wheel Pose",
     sanskrit: "Ardha Chakrasana",
     category: "Standing",
-    duration: 45,
+    duration: 180,
     variation: "Variation I",
   },
   {
@@ -49,7 +53,7 @@ const POSES = [
     name: "Half Waist Wheel Pose",
     sanskrit: "Ardha Katichakrasana",
     category: "Standing",
-    duration: 45,
+    duration: 180,
     variation: "Variation II of STA-04",
   },
   {
@@ -57,7 +61,7 @@ const POSES = [
     name: "Triangle Pose",
     sanskrit: "Trikonasana",
     category: "Standing",
-    duration: 45,
+    duration: 180,
     variation: "Variation I",
   },
   {
@@ -65,7 +69,7 @@ const POSES = [
     name: "Revolved Triangle Pose",
     sanskrit: "Parivritta Trikonasana",
     category: "Standing",
-    duration: 45,
+    duration: 180,
     variation: "Variation II of STA-05",
   },
 
@@ -75,14 +79,14 @@ const POSES = [
     name: "Half Camel Pose",
     sanskrit: "Ardha Ustrasana",
     category: "Sitting",
-    duration: 45,
+    duration: 180,
   },
   {
     id: "SIA-02",
     name: "Twisted Pose",
     sanskrit: "Vakrasana",
     category: "Sitting",
-    duration: 45,
+    duration: 180,
   },
 
   // ── PRONE POSES ─────────────────────────────
@@ -91,14 +95,14 @@ const POSES = [
     name: "Crocodile Pose",
     sanskrit: "Makarasana",
     category: "Prone",
-    duration: 45,
+    duration: 180,
   },
   {
     id: "PR-02",
     name: "Cobra Pose",
     sanskrit: "Bhujangasana",
     category: "Prone",
-    duration: 45,
+    duration: 180,
   },
 
   // ── SUPINE POSES ────────────────────────────
@@ -107,14 +111,14 @@ const POSES = [
     name: "Half Plough Pose",
     sanskrit: "Ardha Halasana",
     category: "Supine",
-    duration: 45,
+    duration: 180,
   },
   {
     id: "SU-02",
     name: "Corpse Pose",
     sanskrit: "Savasana",
     category: "Supine",
-    duration: 45,
+    duration: 180,
   },
 ];
 
@@ -127,6 +131,8 @@ function SequencerPage() {
     sessionRecordings,
     setSessionRecordings,
     tZero: sessionTZero,
+    metadata,
+    username,
   } = useSession();
 
   const [view, setView] = useState("select");
@@ -246,6 +252,23 @@ function SequencerPage() {
     },
     [setSessionRecordings]
   );
+
+  const upsertSessionRecordingRef = useRef(upsertSessionRecording);
+  const sessionMetaRef = useRef({ participantId, metadata, username });
+
+  useEffect(() => {
+    upsertSessionRecordingRef.current = upsertSessionRecording;
+  }, [upsertSessionRecording]);
+
+  useEffect(() => {
+    sessionMetaRef.current = { participantId, metadata, username };
+  }, [participantId, metadata, username]);
+
+  useEffect(() => {
+    if (recordPhase !== "recording") {
+      finalizeRecordingRef.current = null;
+    }
+  }, [recordPhase]);
 
   const playStartCue = useCallback(() => {
     try {
@@ -370,16 +393,32 @@ function SequencerPage() {
     );
 
     const t3 = window.setTimeout(() => {
-      playStartCue();
+      void (async () => {
+        const poseIndex = selectedPoseIndexRef.current;
+        const pose = poseIndex != null ? POSES[poseIndex] : null;
 
-      recordingStartRef.current = Date.now();
+        if (CONFIG.USE_OFFLINE_SESSION_RECORDER && pose) {
+          try {
+            await startPoseRecording({
+              poseId: pose.id,
+              poseName: pose.name,
+            });
+          } catch (err) {
+            console.error("Failed to start pose recording folder:", err);
+          }
+        }
 
-      startRecording(streamRef.current, {
-        sessionTZero: sessionTZero ?? undefined,
-        videoElement: videoRef.current,
-      });
+        playStartCue();
 
-      setRecordPhase("recording");
+        recordingStartRef.current = Date.now();
+
+        startRecording(streamRef.current, {
+          sessionTZero: sessionTZero ?? undefined,
+          videoElement: videoRef.current,
+        });
+
+        setRecordPhase("recording");
+      })();
     }, 3000);
 
     return () => {
@@ -410,7 +449,10 @@ function SequencerPage() {
     if (poseIndex == null) return;
 
     const pose = POSES[poseIndex];
-    const duration = pose.duration || RECORDING_DURATION_SEC;
+    const duration = Math.min(
+      pose.duration || RECORDING_DURATION_SEC,
+      RECORDING_DURATION_SEC
+    );
 
     let cancelled = false;
     let finalized = false;
@@ -471,8 +513,9 @@ function SequencerPage() {
       );
     }, 200);
 
-    const finalizeRecording = async () => {
-      if (cancelled || finalized) return;
+    const finalizeRecording = async ({ manual = false } = {}) => {
+      if (finalized) return;
+      if (cancelled && !manual) return;
       finalized = true;
       cancelled = true;
 
@@ -488,14 +531,48 @@ function SequencerPage() {
 
       const poseLandmarks = [...landmarkBufferRef.current];
 
-      const { videoBlob, imuPackets, storedOffline } = await stopRecording();
-
       const actualDuration = Math.min(
         Math.max(1, Math.floor((Date.now() - start) / 1000)),
         duration
       );
 
-      upsertSessionRecording({
+      const { videoBlob, imuPackets, storedOffline } = await stopRecording({
+        poseId: pose.id,
+        poseName: pose.name,
+      });
+
+      const { participantId: pid, metadata: meta, username: uname } =
+        sessionMetaRef.current;
+
+      if (CONFIG.USE_OFFLINE_SESSION_RECORDER) {
+        try {
+          await completePoseRecording({
+            participantId: pid,
+            poseName: pose.name,
+            poseId: pose.id,
+            sanskrit: pose.sanskrit,
+            category: pose.category,
+            variation: pose.variation || "",
+            duration: actualDuration,
+            recordedAt: new Date().toISOString(),
+            skipped: false,
+            username: uname || meta?.username || "",
+            sessionNumber: meta?.sessionNumber,
+            name: meta?.name || "",
+            age: meta?.age || "",
+            gender: meta?.gender || "",
+            height: meta?.height || "",
+            weight: meta?.weight || "",
+            experience: meta?.experience || "",
+            healthRemarks: meta?.healthRemarks || "",
+            sessionDate: meta?.sessionDate || "",
+          });
+        } catch (err) {
+          console.error("Failed to finalize pose folder:", err);
+        }
+      }
+
+      upsertSessionRecordingRef.current({
         poseId: pose.id,
         poseIndex,
         poseName: pose.name,
@@ -540,14 +617,12 @@ function SequencerPage() {
 
     recordingCancelRef.current = () => {
       cancelled = true;
+      finalized = true;
       window.clearInterval(tick);
       window.clearTimeout(end);
     };
 
     return () => {
-      cancelled = true;
-      finalizeRecordingRef.current = null;
-
       cancelAnimationFrame(initHandle);
 
       if (mediaPipeCleanupRef.current) {
@@ -560,13 +635,7 @@ function SequencerPage() {
       window.clearInterval(tick);
       window.clearTimeout(end);
     };
-  }, [
-    view,
-    recordPhase,
-    cameraStream,
-    upsertSessionRecording,
-    sessionTZero,
-  ]);
+  }, [view, recordPhase, cameraStream, sessionTZero]);
 
   useEffect(() => {
     if (recordPhase !== "saved") return;
@@ -580,17 +649,19 @@ function SequencerPage() {
     return () => window.clearTimeout(id);
   }, [recordPhase]);
 
-  const durationSec = RECORDING_DURATION_SEC;
+  const selectedPose =
+    selectedPoseIndex != null
+      ? POSES[selectedPoseIndex]
+      : null;
+
+  const durationSec = selectedPose
+    ? Math.min(selectedPose.duration || RECORDING_DURATION_SEC, RECORDING_DURATION_SEC)
+    : RECORDING_DURATION_SEC;
 
   const remainingRecording = Math.max(
     0,
     durationSec - recordingSeconds
   );
-
-  const selectedPose =
-    selectedPoseIndex != null
-      ? POSES[selectedPoseIndex]
-      : null;
 
   const currentPoseIndex = selectedPoseIndex;
 
@@ -937,7 +1008,9 @@ function SequencerPage() {
                     type="button"
                     className="sequencer-btn-stop"
                     disabled={isFinalizing}
-                    onClick={() => void finalizeRecordingRef.current?.()}
+                    onClick={() =>
+                      void finalizeRecordingRef.current?.({ manual: true })
+                    }
                   >
                     {isFinalizing ? "Finalizing…" : "Stop Recording"}
                   </button>

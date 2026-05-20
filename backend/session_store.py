@@ -1,11 +1,9 @@
 """
 Offline session storage under SESSIONS_ROOT (default E:\\SensorData\\Sessions).
 
-Each session folder: {username}_{timestamp} containing only:
-  video.webm, landmarks.json, imu.json, metadata.json
-
-Browser MediaRecorder WebM segments are stored in a temp directory, merged with
-ffmpeg (-c copy) into video.webm, then temp files are deleted.
+Layout:
+  {SESSIONS_ROOT}/session_YYYY-MM-DD/{name}_{participantId}/{poseId}_{poseName}/
+    video.webm, landmarks.json, metadata.json, imu_data.json (optional)
 """
 
 from __future__ import annotations
@@ -14,8 +12,6 @@ import json
 import os
 import platform
 import shutil
-import subprocess
-import tempfile
 import threading
 import time
 from dataclasses import dataclass, field
@@ -38,14 +34,41 @@ def _sanitize_participant_token(value: str, *, fallback: str) -> str:
     return cleaned[:80] if cleaned else fallback
 
 
-def session_dir_name(participant_name: str | None, participant_id: str | None) -> str:
-    """Folder: username_YYYYMMDD_HHMMSS"""
-    username = _sanitize_participant_token(
+def session_day_dir_name(when: datetime | None = None) -> str:
+    """Folder: session_YYYY-MM-DD"""
+    dt = when or datetime.now()
+    return f"session_{dt.strftime('%Y-%m-%d')}"
+
+
+def participant_dir_name(
+    participant_name: str | None,
+    participant_id: str | None,
+) -> str:
+    """Folder: {name}_{participantId}"""
+    name = _sanitize_participant_token(
         (participant_name or "participant").strip(),
         fallback="participant",
     )
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    return f"{username}_{ts}"
+    pid = _sanitize_participant_token(
+        (participant_id or "unknown").strip(),
+        fallback="unknown",
+    )
+    return f"{name}_{pid}"
+
+
+def pose_dir_name(pose_id: str | None, pose_name: str | None) -> str:
+    """Folder: {poseId}_{poseName}"""
+    pid = _sanitize_participant_token((pose_id or "pose").strip(), fallback="pose")
+    pname = _sanitize_participant_token(
+        (pose_name or "pose").replace(" ", "_"),
+        fallback="pose",
+    )
+    return f"{pid}_{pname}"
+
+
+def session_dir_name(participant_name: str | None, participant_id: str | None) -> str:
+    """Legacy helper — participant folder name only."""
+    return participant_dir_name(participant_name, participant_id)
 
 
 def _normalize_quaternion(payload: dict[str, Any]) -> list[float] | None:
@@ -148,36 +171,32 @@ class JsonlWriter:
 
 
 @dataclass
-class ActiveSession:
-    session_id: str
+class PoseRecording:
+    pose_id: str
+    pose_name: str
     directory: Path
-    t_zero: float
+    landmarks_writer: JsonlWriter
+    imu_writer: JsonlWriter
     started_at: str
-    sensor_ids: set[str] = field(default_factory=set)
-    imu_writer: JsonlWriter | None = None
-    landmarks_writer: JsonlWriter | None = None
-    imu_sample_count: int = 0
+    t_pose_start: float
     landmark_frame_count: int = 0
-    video_fps: float = 30.0
-    _video_segment_paths: list[Path] = field(default_factory=list)
-    _temp_video_dir: Path | None = field(default=None, repr=False)
-    _lock: threading.Lock = field(default_factory=threading.Lock)
-
-    @property
-    def imu_jsonl_path(self) -> Path:
-        return self.directory / "imu.jsonl"
+    imu_sample_count: int = 0
 
     @property
     def landmarks_jsonl_path(self) -> Path:
         return self.directory / "landmarks.jsonl"
 
     @property
-    def imu_json_path(self) -> Path:
-        return self.directory / "imu.json"
+    def imu_jsonl_path(self) -> Path:
+        return self.directory / "imu.jsonl"
 
     @property
     def landmarks_json_path(self) -> Path:
         return self.directory / "landmarks.json"
+
+    @property
+    def imu_json_path(self) -> Path:
+        return self.directory / "imu_data.json"
 
     @property
     def video_path(self) -> Path:
@@ -187,12 +206,25 @@ class ActiveSession:
     def metadata_path(self) -> Path:
         return self.directory / "metadata.json"
 
-    def ensure_temp_video_dir(self) -> Path:
-        if self._temp_video_dir is None:
-            self._temp_video_dir = Path(
-                tempfile.mkdtemp(prefix=f"yoga_vid_{self.session_id}_")
-            )
-        return self._temp_video_dir
+
+@dataclass
+class ActiveSession:
+    session_id: str
+    session_day: str
+    directory: Path
+    t_zero: float
+    started_at: str
+    participant_id: str | None = None
+    participant_name: str | None = None
+    sensor_ids: set[str] = field(default_factory=set)
+    video_fps: float = 30.0
+    current_pose: PoseRecording | None = None
+    poses_completed: list[str] = field(default_factory=list)
+    _lock: threading.Lock = field(default_factory=threading.Lock)
+
+    @property
+    def metadata_path(self) -> Path:
+        return self.directory / "metadata.json"
 
 
 class SessionStore:
@@ -214,26 +246,29 @@ class SessionStore:
 
             t0 = float(t_zero if t_zero is not None else time.time())
             extra_data = extra or {}
-            session_id = session_dir_name(
-                extra_data.get("participant_name"),
-                extra_data.get("participant_id"),
-            )
-            directory = self.root / session_id
+            participant_name = extra_data.get("participant_name")
+            participant_id = extra_data.get("participant_id")
+            session_day = session_day_dir_name()
+            participant_folder = participant_dir_name(participant_name, participant_id)
+            session_id = f"{session_day}/{participant_folder}"
+            directory = self.root / session_day / participant_folder
             directory.mkdir(parents=True, exist_ok=True)
 
             session = ActiveSession(
                 session_id=session_id,
+                session_day=session_day,
                 directory=directory,
                 t_zero=t0,
                 started_at=datetime.now().isoformat(timespec="seconds"),
                 video_fps=video_fps,
-                imu_writer=JsonlWriter(directory / "imu.jsonl"),
-                landmarks_writer=JsonlWriter(directory / "landmarks.jsonl"),
+                participant_id=str(participant_id) if participant_id else None,
+                participant_name=str(participant_name) if participant_name else None,
             )
             self.active = session
 
             meta_stub = {
                 "session_id": session_id,
+                "session_day": session_day,
                 "status": "recording",
                 "started_at": session.started_at,
                 "t_zero": t0,
@@ -253,10 +288,46 @@ class SessionStore:
                 "t_zero": t0,
             }
 
+    def begin_pose(self, *, pose_id: str, pose_name: str) -> dict[str, Any]:
+        with self._lock:
+            session = self.active
+            if session is None:
+                return {"ok": False, "error": "no_active_session"}
+
+            self._finalize_current_pose_locked(session, metadata=None)
+
+            folder_name = pose_dir_name(pose_id, pose_name)
+            pose_dir = session.directory / folder_name
+            if pose_dir.exists():
+                shutil.rmtree(pose_dir, ignore_errors=True)
+            pose_dir.mkdir(parents=True, exist_ok=True)
+
+            t_pose = time.time()
+            pose = PoseRecording(
+                pose_id=pose_id,
+                pose_name=pose_name,
+                directory=pose_dir,
+                landmarks_writer=JsonlWriter(pose_dir / "landmarks.jsonl"),
+                imu_writer=JsonlWriter(pose_dir / "imu.jsonl"),
+                started_at=datetime.now().isoformat(timespec="seconds"),
+                t_pose_start=t_pose,
+            )
+            session.current_pose = pose
+
+            print("Pose recording started:", pose_dir)
+
+            return {
+                "ok": True,
+                "pose_id": pose_id,
+                "pose_name": pose_name,
+                "directory": str(pose_dir),
+            }
+
     def append_imu(self, payload: dict[str, Any]) -> bool:
         with self._lock:
             session = self.active
-        if session is None or session.imu_writer is None:
+            pose = session.current_pose if session else None
+        if session is None or pose is None:
             return False
 
         entry = imu_payload_to_entry(payload, session.t_zero)
@@ -264,8 +335,8 @@ class SessionStore:
             return False
 
         session.sensor_ids.add(entry["sensor_id"])
-        session.imu_writer.append(entry)
-        session.imu_sample_count += 1
+        pose.imu_writer.append(entry)
+        pose.imu_sample_count += 1
         return True
 
     def append_landmarks(
@@ -278,7 +349,8 @@ class SessionStore:
     ) -> bool:
         with self._lock:
             session = self.active
-        if session is None or session.landmarks_writer is None:
+            pose = session.current_pose if session else None
+        if session is None or pose is None:
             return False
 
         ts = float(timestamp if timestamp is not None else _unix_timestamp())
@@ -293,167 +365,113 @@ class SessionStore:
         if pose_id:
             row["pose_id"] = pose_id
 
-        session.landmarks_writer.append(row)
-        session.landmark_frame_count += 1
+        pose.landmarks_writer.append(row)
+        pose.landmark_frame_count += 1
         return True
 
-    def append_webm_segment(self, webm_bytes: bytes) -> Path | None:
-        """Store one browser MediaRecorder WebM blob (per pose recording)."""
+    def save_pose_webm(
+        self,
+        webm_bytes: bytes,
+        *,
+        pose_id: str | None = None,
+        pose_name: str | None = None,
+    ) -> Path | None:
+        """Save one pose recording directly as video.webm (no cross-pose merge)."""
         if not webm_bytes:
             return None
         with self._lock:
             session = self.active
             if session is None:
                 return None
-            temp_dir = session.ensure_temp_video_dir()
-            seg_path = temp_dir / f"segment_{len(session._video_segment_paths):04d}.webm"
-            seg_path.write_bytes(webm_bytes)
-            session._video_segment_paths.append(seg_path)
-            return seg_path
+            pose = session.current_pose
 
-    def finalize_video(self) -> Path | None:
-        """Merge WebM chunks into session video.webm."""
+        if pose is None and pose_id and pose_name:
+            self.begin_pose(pose_id=pose_id, pose_name=pose_name)
+
         with self._lock:
             session = self.active
-        if session is None:
-            return None
-        return self._merge_video_segments(session)
+            if session is None:
+                return None
+            pose = session.current_pose
+            if pose is None:
+                return None
+            video_path = pose.video_path
+            video_path.write_bytes(webm_bytes)
+            print("Saved pose video:", video_path)
+            print("Video size:", os.path.getsize(video_path))
+            return video_path
 
-    @staticmethod
-    def _log_final_video(path: Path | None) -> None:
-        if path is not None and path.exists():
-            print("Final video file:", path)
-            print("Video size:", os.path.getsize(path))
+    def append_webm_segment(self, webm_bytes: bytes) -> Path | None:
+        """Legacy name — stores WebM for the active pose without merging."""
+        return self.save_pose_webm(webm_bytes)
+
+    def finalize_video(self) -> Path | None:
+        """Return the current pose video path if present (no merge)."""
+        with self._lock:
+            session = self.active
+            if session is None or session.current_pose is None:
+                return None
+            video_path = session.current_pose.video_path
+            return video_path if video_path.exists() else None
 
     def stop_video_capture(self) -> Path | None:
-        """Alias used by API: merge WebM segments after a recording stops."""
-        video_path = self.finalize_video()
-        if video_path:
-            self._log_final_video(video_path)
-        return video_path
+        return self.finalize_video()
 
-    def _merge_video_segments(self, session: ActiveSession) -> Path | None:
-        chunk_segments = [
-            p
-            for p in session._video_segment_paths
-            if p.exists() and p.stat().st_size > 0
-        ]
-        out = session.video_path
+    def complete_pose(self, *, metadata: dict[str, Any] | None = None) -> dict[str, Any]:
+        with self._lock:
+            session = self.active
+            if session is None:
+                return {"ok": False, "error": "no_active_session"}
+            return self._finalize_current_pose_locked(session, metadata=metadata)
 
-        segments: list[Path] = []
-        if out.exists() and out.stat().st_size > 0:
-            segments.append(out)
-        segments.extend(chunk_segments)
+    def _finalize_current_pose_locked(
+        self,
+        session: ActiveSession,
+        *,
+        metadata: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        pose = session.current_pose
+        if pose is None:
+            return {"ok": True, "note": "no_active_pose"}
 
-        if not segments:
-            return None
+        landmark_count = pose.landmarks_writer.finalize_array(pose.landmarks_json_path)
+        print("Saved landmarks:", pose.landmarks_json_path)
 
-        if len(segments) == 1 and segments[0] == out:
-            return out
+        imu_count = pose.imu_writer.finalize_array(pose.imu_json_path)
+        if imu_count == 0 and pose.imu_json_path.exists():
+            pose.imu_json_path.write_text("[]", encoding="utf-8")
+        if imu_count:
+            print("Saved IMU:", pose.imu_json_path)
 
-        if len(segments) == 1:
-            shutil.copy2(segments[0], out)
-            self._remove_chunk_files(session, chunk_segments)
-            return out if out.exists() else None
+        pose.landmarks_jsonl_path.unlink(missing_ok=True)
+        pose.imu_jsonl_path.unlink(missing_ok=True)
 
-        temp_dir = session.ensure_temp_video_dir()
-        list_file = temp_dir / "_concat_list.txt"
-        lines = []
-        for p in segments:
-            path_str = str(p.resolve()).replace("\\", "/")
-            lines.append(f"file '{path_str}'")
-        list_file.write_text("\n".join(lines), encoding="utf-8")
+        video_path = pose.video_path if pose.video_path.exists() else None
+        meta = {
+            "poseId": pose.pose_id,
+            "poseName": pose.pose_name,
+            "recordedAt": pose.started_at,
+            "landmark_frame_count": landmark_count,
+            "imu_sample_count": imu_count,
+            "video_file": "video.webm" if video_path else None,
+            "landmarks_file": "landmarks.json" if landmark_count else None,
+            "imu_file": "imu_data.json" if imu_count else None,
+            **(metadata or {}),
+        }
+        pose.metadata_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+        print("Saved pose metadata:", pose.metadata_path)
 
-        ffmpeg = shutil.which("ffmpeg")
-        merged = False
-        if ffmpeg:
-            cmd = [
-                ffmpeg,
-                "-y",
-                "-loglevel",
-                "error",
-                "-f",
-                "concat",
-                "-safe",
-                "0",
-                "-i",
-                str(list_file),
-                "-c",
-                "copy",
-                str(out),
-            ]
-            try:
-                subprocess.run(
-                    cmd,
-                    check=True,
-                    capture_output=True,
-                    timeout=120,
-                )
-                merged = out.exists() and out.stat().st_size > 0
-            except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
-                merged = False
+        session.poses_completed.append(pose_dir_name(pose.pose_id, pose.pose_name))
+        session.current_pose = None
 
-        if not merged:
-            import cv2
-
-            writer = None
-            for seg in segments:
-                cap = cv2.VideoCapture(str(seg))
-                if not cap.isOpened():
-                    continue
-                w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                fps = cap.get(cv2.CAP_PROP_FPS) or session.video_fps
-                if writer is None:
-                    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-                    writer = cv2.VideoWriter(str(out), fourcc, fps, (w, h))
-                while True:
-                    ok, frame = cap.read()
-                    if not ok:
-                        break
-                    writer.write(frame)
-                cap.release()
-            if writer is not None:
-                writer.release()
-            merged = out.exists() and out.stat().st_size > 0
-
-        list_file.unlink(missing_ok=True)
-        if merged:
-            self._remove_chunk_files(session, chunk_segments)
-            session._video_segment_paths.clear()
-            return out
-        return None
-
-    @staticmethod
-    def _remove_chunk_files(session: ActiveSession, chunk_paths: list[Path]) -> None:
-        for path in chunk_paths:
-            path.unlink(missing_ok=True)
-        if session._temp_video_dir and session._temp_video_dir.exists():
-            try:
-                if not any(session._temp_video_dir.iterdir()):
-                    session._temp_video_dir.rmdir()
-            except OSError:
-                pass
-
-    @staticmethod
-    def _remove_legacy_subdirs(session_dir: Path) -> None:
-        """Remove old mediapipe/ or _video_segments/ folders if present."""
-        for name in ("mediapipe", "_video_segments"):
-            legacy = session_dir / name
-            if legacy.exists():
-                shutil.rmtree(legacy, ignore_errors=True)
-
-    @staticmethod
-    def _cleanup_temp_video_dir(session: ActiveSession) -> None:
-        if session._temp_video_dir and session._temp_video_dir.exists():
-            shutil.rmtree(session._temp_video_dir, ignore_errors=True)
-        session._temp_video_dir = None
-        session._video_segment_paths.clear()
-
-    @staticmethod
-    def _cleanup_recording_scratch_files(session: ActiveSession) -> None:
-        session.imu_jsonl_path.unlink(missing_ok=True)
-        session.landmarks_jsonl_path.unlink(missing_ok=True)
+        return {
+            "ok": True,
+            "pose_id": pose.pose_id,
+            "directory": str(pose.directory),
+            "landmark_frame_count": landmark_count,
+            "imu_sample_count": imu_count,
+            "video_file": "video.webm" if video_path else None,
+        }
 
     def stop(self, *, extra_metadata: dict[str, Any] | None = None) -> dict[str, Any]:
         with self._lock:
@@ -463,52 +481,26 @@ class SessionStore:
         if session is None:
             return {"ok": False, "error": "no_active_session"}
 
-        self.finalize_video()
-
-        imu_count = 0
-        landmark_count = 0
-        imu_path = session.imu_json_path
-        landmarks_path = session.landmarks_json_path
-
-        if session.imu_writer:
-            imu_count = session.imu_writer.finalize_array(imu_path)
-            print("Saved imu:", imu_path)
-
-        if session.landmarks_writer:
-            landmark_count = session.landmarks_writer.finalize_array(landmarks_path)
-            print("Saved landmarks:", landmarks_path)
-
-        video_path = session.video_path if session.video_path.exists() else None
-        if video_path is None or video_path.stat().st_size == 0:
-            video_path = self._merge_video_segments(session)
-        if video_path:
-            self._log_final_video(video_path)
-
-        self._cleanup_recording_scratch_files(session)
-        self._cleanup_temp_video_dir(session)
-        self._remove_legacy_subdirs(session.directory)
+        self._finalize_current_pose_locked(session, metadata=None)
 
         ended_at = datetime.now().isoformat(timespec="seconds")
         duration_sec = max(0.0, time.time() - session.t_zero)
 
         metadata = {
             "session_id": session.session_id,
+            "session_day": session.session_day,
             "status": "complete",
             "started_at": session.started_at,
             "ended_at": ended_at,
             "duration_sec": round(duration_sec, 3),
             "t_zero": session.t_zero,
             "directory": str(session.directory),
+            "poses_completed": list(session.poses_completed),
             "sensor_ids": sorted(session.sensor_ids),
             "sensor_count": len(session.sensor_ids),
-            "imu_sample_count": imu_count,
-            "landmark_frame_count": landmark_count,
             "video_fps": session.video_fps,
-            "video_file": "video.webm" if video_path else None,
-            "video_format": "webm",
-            "landmarks_file": "landmarks.json" if landmark_count else None,
-            "imu_file": "imu.json" if imu_count else None,
-            "imu_sampling_note": "per-packet UDP (device rate)",
+            "storage_layout": "session_day/participant/pose",
+            "imu_sampling_note": "per-packet UDP (device rate), per pose folder as imu_data.json",
             "landmarks_fps_note": "browser requestAnimationFrame (~30)",
             "system": {
                 "platform": platform.platform(),
@@ -534,12 +526,14 @@ class SessionStore:
             session = self.active
         if session is None:
             return {"active": False, "root": str(self.root)}
+        pose = session.current_pose
         return {
             "active": True,
             "session_id": session.session_id,
             "directory": str(session.directory),
             "t_zero": session.t_zero,
             "sensor_ids": sorted(session.sensor_ids),
-            "imu_samples": session.imu_sample_count,
-            "landmark_frames": session.landmark_frame_count,
+            "current_pose_id": pose.pose_id if pose else None,
+            "current_pose_directory": str(pose.directory) if pose else None,
+            "poses_completed": list(session.poses_completed),
         }

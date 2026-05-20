@@ -37,7 +37,7 @@ export function startRecording(stream, options = {}) {
   return tZero;
 }
 
-export function stopRecording() {
+export function stopRecording(options = {}) {
   return new Promise((resolve) => {
     const finish = async () => {
       const videoBlob = new Blob(recordedChunks, { type: "video/webm" });
@@ -46,7 +46,10 @@ export function stopRecording() {
 
       if (CONFIG.USE_OFFLINE_SESSION_RECORDER && videoBlob.size > 0) {
         try {
-          await uploadSessionWebm(videoBlob);
+          await uploadSessionWebm(videoBlob, {
+            poseId: options.poseId,
+            poseName: options.poseName,
+          });
         } catch (err) {
           console.error("Failed to upload WebM to session folder:", err);
         }

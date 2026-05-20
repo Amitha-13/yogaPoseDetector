@@ -1,10 +1,11 @@
 """
 Offline-first multi-sensor collection server.
 
-UDP :5000  — ESP32 IMU JSON (append to imu.jsonl, finalized to imu.json)
+UDP :5000  — ESP32 IMU JSON (per-pose imu_data.json while a pose is recording)
 HTTP :5001 — session control, status
-WS   :5001/ws/landmarks — MediaPipe frames → landmarks.jsonl → landmarks.json
-POST :5001/session/video/webm — browser MediaRecorder WebM → video.webm
+WS   :5001/ws/landmarks — MediaPipe frames → per-pose landmarks.json
+POST :5001/session/video/webm — browser MediaRecorder WebM → pose folder video.webm
+POST :5001/session/pose/start | /session/pose/complete — pose folder lifecycle
 
 Run: python data_collection_server.py
 """
@@ -59,6 +60,33 @@ class VideoStartBody(BaseModel):
     width: int = 1280
     height: int = 720
     fps: float | None = 30.0
+
+
+class PoseStartBody(BaseModel):
+    poseId: str
+    poseName: str
+
+
+class PoseCompleteBody(BaseModel):
+    participantId: str | None = None
+    poseName: str | None = None
+    poseId: str | None = None
+    sanskrit: str | None = None
+    category: str | None = None
+    variation: str | None = None
+    duration: int | float | None = None
+    recordedAt: str | None = None
+    skipped: bool | None = None
+    username: str | None = None
+    sessionNumber: int | None = None
+    name: str | None = None
+    age: str | None = None
+    gender: str | None = None
+    height: str | None = None
+    weight: str | None = None
+    experience: str | None = None
+    healthRemarks: str | None = None
+    sessionDate: str | None = None
 
 
 def _udp_loop() -> None:
@@ -145,7 +173,7 @@ def video_start(body: VideoStartBody) -> dict[str, Any]:
 
 @app.post("/session/video/stop")
 def video_stop() -> dict[str, Any]:
-    """Merge any pending WebM segments (no upload in body)."""
+    """Return current pose video path if present."""
     video_path = store.stop_video_capture()
     size = video_path.stat().st_size if video_path and video_path.exists() else 0
     return {
@@ -156,27 +184,43 @@ def video_stop() -> dict[str, Any]:
     }
 
 
+@app.post("/session/pose/start")
+def pose_start(body: PoseStartBody) -> dict[str, Any]:
+    return store.begin_pose(pose_id=body.poseId, pose_name=body.poseName)
+
+
+@app.post("/session/pose/complete")
+def pose_complete(body: PoseCompleteBody) -> dict[str, Any]:
+    meta = body.model_dump(exclude_none=True)
+    return store.complete_pose(metadata=meta)
+
+
 @app.post("/session/video/webm")
 async def upload_webm(request: Request) -> dict[str, Any]:
-    """Receive MediaRecorder WebM blob, append segment, merge to video.webm."""
+    """Receive MediaRecorder WebM blob; save to active pose folder as video.webm."""
     import os
 
     data = await request.body()
     if not data:
         return {"ok": False, "error": "empty_body"}
 
-    seg = store.append_webm_segment(data)
-    if seg is None:
-        return {"ok": False, "error": "no_active_session"}
+    pose_id = request.query_params.get("poseId")
+    pose_name = request.query_params.get("poseName")
 
-    video_path = store.finalize_video()
-    size = os.path.getsize(video_path) if video_path and video_path.exists() else 0
+    video_path = store.save_pose_webm(
+        data,
+        pose_id=pose_id,
+        pose_name=pose_name,
+    )
+    if video_path is None:
+        return {"ok": False, "error": "no_active_session_or_pose"}
+
+    size = os.path.getsize(video_path) if video_path.exists() else 0
     return {
-        "ok": bool(video_path),
-        "video_file": "video.webm" if video_path else None,
-        "video_path": str(video_path) if video_path else None,
+        "ok": True,
+        "video_file": "video.webm",
+        "video_path": str(video_path),
         "video_size": size,
-        "segment": str(seg),
     }
 
 
