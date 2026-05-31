@@ -144,6 +144,58 @@ def zip_session(session_dir: Path, dest: Path) -> None:
                 zf.write(path, arcname=path.relative_to(session_dir.parent))
 
 
+def upload_single_session(
+    session_dir: str | Path,
+    *,
+    parent_folder_id: str | None = None,
+) -> dict:
+    """Upload one session directory to Google Drive."""
+    session_path = Path(session_dir)
+    if not session_path.is_dir():
+        raise FileNotFoundError(f"Session directory not found: {session_path}")
+
+    if not session_complete(session_path):
+        return {"ok": False, "error": "Session is incomplete or missing metadata.json"}
+
+    parent_id = parent_folder_id or GDRIVE_PARENT_FOLDER_ID
+    if not parent_id:
+        return {
+            "ok": False,
+            "error": "Set YOGA_DATASET_FOLDER_ID env var or pass parent_folder_id",
+        }
+
+    marker = session_path / ".uploaded_to_gdrive"
+    if marker.exists():
+        try:
+            data = json.loads(marker.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            data = {}
+        return {
+            "ok": True,
+            "status": "already_uploaded",
+            "message": "Session was already uploaded to Google Drive.",
+            **data,
+        }
+
+    service = get_drive_service()
+    zip_path = session_path.parent / f"{session_path.name}.zip"
+    zip_session(session_path, zip_path)
+    folder_id = create_folder(service, session_path.name, parent_id)
+    file_id = upload_file(service, zip_path, folder_id)
+    marker.write_text(
+        json.dumps({"drive_folder_id": folder_id, "file_id": file_id}),
+        encoding="utf-8",
+    )
+    zip_path.unlink(missing_ok=True)
+    return {
+        "ok": True,
+        "status": "uploaded",
+        "message": f"Uploaded {session_path.name} to Google Drive.",
+        "drive_folder_id": folder_id,
+        "file_id": file_id,
+    }
+
+
 def upload_sessions_to_gdrive(
     sessions_root: str | Path,
     *,

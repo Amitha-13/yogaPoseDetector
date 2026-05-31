@@ -3,6 +3,13 @@ import { useNavigate } from "react-router-dom";
 import { useSession } from "../context/SessionContext";
 import CONFIG from "../config";
 import {
+  cardVariant,
+  countActiveOnline,
+  normalizeImuPollPayload,
+  slotOfflineMessage,
+  slotStatusLabel,
+} from "../utils/sensorStatus";
+import {
   checkRecorderHealth,
   getSessionsRootDisplay,
   startOfflineSession,
@@ -118,30 +125,7 @@ function HardwarePage() {
           const data = await res.json();
           setFlaskReachable(true);
 
-          const normalized = {};
-          if (data && typeof data === "object") {
-            Object.keys(data).forEach((deviceId) => {
-              const device = data[deviceId];
-              if (device && typeof device === "object") {
-                normalized[deviceId] = {
-                  ...device,
-                  online: device.online === true,
-                  packet_count:
-                    typeof device.packet_count === "number"
-                      ? device.packet_count
-                      : null,
-                  voltage:
-                    typeof device.voltage === "number"
-                      ? device.voltage
-                      : null,
-                  rssi: typeof device.rssi === "number" ? device.rssi : null,
-                  lastSeen: Date.now(),
-                };
-              }
-            });
-          }
-
-          setImuDevices(normalized);
+          setImuDevices(normalizeImuPollPayload(data, CONFIG.SENSOR_SLOTS));
         } else {
           setFlaskReachable(false);
           setImuDevices({});
@@ -276,9 +260,8 @@ function HardwarePage() {
 
   const systemsReady = cameraReady && calibrationDone;
 
-  const liveCount = Object.values(imuDevices).filter((device) => device?.online === true).length;
-  const missingCount = Math.max(0, CONFIG.ACTIVE_SENSOR_COUNT - liveCount);
-  const reservedCount = CONFIG.TOTAL_SENSOR_COUNT - CONFIG.ACTIVE_SENSOR_COUNT;
+  const liveCount = countActiveOnline(imuDevices, CONFIG.SENSOR_SLOTS);
+  const disconnectedCount = CONFIG.ACTIVE_SENSOR_COUNT - liveCount;
 
   return (
     <div className="container-fluid py-4">
@@ -348,13 +331,10 @@ function HardwarePage() {
 
               <div className="sensor-summary">
                 <span className="text-success">
-                  🟢 {liveCount} Live
+                  🟢 {liveCount} Connected
                 </span>
                 <span className="text-danger ms-3">
-                  🔴 {missingCount} Missing
-                </span>
-                <span className="text-secondary ms-3">
-                  ⬜ {reservedCount} Reserved
+                  🔴 {disconnectedCount} Disconnected
                 </span>
               </div>
 
@@ -362,11 +342,7 @@ function HardwarePage() {
                 {CONFIG.SENSOR_SLOTS.map((slot) => {
                   const liveData = imuDevices[slot.id];
                   const isLive = liveData?.online === true;
-                  const cardVariant = isLive
-                    ? "live"
-                    : slot.status === "placeholder"
-                      ? "placeholder"
-                      : "timeout";
+                  const variant = cardVariant(slot, isLive);
                   const badgeClass = isLive
                     ? "badge-live"
                     : slot.status === "placeholder"
@@ -376,15 +352,15 @@ function HardwarePage() {
                   return (
                     <div
                       key={slot.id}
-                      className={`sensor-card sensor-card--${cardVariant}`}
+                      className={`sensor-card sensor-card--${variant}`}
                     >
                       <div className="sensor-card__header">
                         <span className="sensor-id">{slot.label}</span>
                         <span className={`sensor-badge ${badgeClass}`}>
                           {isLive
-                            ? "🟢 Live"
+                            ? "🟢 Connected"
                             : slot.status === "placeholder"
-                              ? "⬜ Reserved"
+                              ? "⚪ Placeholder"
                               : "🔴 Disconnected"}
                         </span>
                       </div>
@@ -405,16 +381,15 @@ function HardwarePage() {
                         </div>
                       )}
 
-                      {slot.status === "placeholder" && (
-                        <div className="sensor-placeholder-msg">
-                          Sensor not yet available. Flash ESP32 with id &quot;{slot.id}&quot; to
-                          activate.
-                        </div>
-                      )}
-
-                      {slot.status === "active" && !isLive && (
-                        <div className="sensor-timeout-msg">
-                          Expected sensor not detected. Check ESP32 WiFi connection.
+                      {!isLive && (
+                        <div
+                          className={
+                            slot.status === "placeholder"
+                              ? "sensor-placeholder-msg"
+                              : "sensor-timeout-msg"
+                          }
+                        >
+                          {slotOfflineMessage(slot)}
                         </div>
                       )}
                     </div>
@@ -462,20 +437,19 @@ function HardwarePage() {
                   ? "Confirm calibration first"
                   : "Start Session →"}
           </button>
-          {Object.keys(imuDevices).length === 0 && (
+          {liveCount === 0 && (
             <div className="alert alert-info mt-2 py-2" style={{ fontSize: "0.85rem" }}>
               ℹ️ No IMU sensors detected. Session will record video and landmarks only. IMU data will
               be empty in the exported files.
             </div>
           )}
-          {Object.keys(imuDevices).length > 0 &&
-            Object.keys(imuDevices).length < CONFIG.ACTIVE_SENSOR_COUNT && (
+          {liveCount > 0 && liveCount < CONFIG.ACTIVE_SENSOR_COUNT && (
               <div className="alert alert-warning mt-2 py-2" style={{ fontSize: "0.85rem" }}>
-                ⚠️ {Object.keys(imuDevices).length} of {CONFIG.ACTIVE_SENSOR_COUNT} sensors detected.
+                ⚠️ {liveCount} of {CONFIG.ACTIVE_SENSOR_COUNT} sensors detected.
                 Recording will use available sensors only.
               </div>
             )}
-          {Object.keys(imuDevices).length >= CONFIG.ACTIVE_SENSOR_COUNT && (
+          {liveCount >= CONFIG.ACTIVE_SENSOR_COUNT && (
             <div className="alert alert-success mt-2 py-2" style={{ fontSize: "0.85rem" }}>
               ✅ All {CONFIG.ACTIVE_SENSOR_COUNT} sensors connected. Ready to record.
             </div>

@@ -21,6 +21,7 @@ from typing import Any
 import uvicorn
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from imu_debug_monitor import imu_monitor
@@ -54,6 +55,10 @@ class SessionStopBody(BaseModel):
     participantName: str | None = None
     posesRecorded: int | None = None
     notes: str | None = None
+    collectionType: str | None = None
+    storageLocation: str | None = None
+    connectedImus: list[str] | None = None
+    connectedFootrestSensors: list[str] | None = None
 
 
 class VideoStartBody(BaseModel):
@@ -89,6 +94,10 @@ class PoseCompleteBody(BaseModel):
     sessionDate: str | None = None
 
 
+class GdriveUploadBody(BaseModel):
+    directory: str | None = None
+
+
 def _udp_loop() -> None:
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -116,9 +125,24 @@ def debug_imu() -> dict[str, Any]:
     return imu_monitor.get_debug_response()
 
 
+@app.get("/sensors/registry")
+def sensors_registry() -> dict[str, Any]:
+    """Canonical sensor slot definitions (IMU 1–26) for UI and future hardware integration."""
+    from sensor_registry import registry_document
+
+    return registry_document()
+
+
 @app.get("/session/status")
 def session_status() -> dict[str, Any]:
     return store.status()
+
+
+@app.get("/storage/volumes")
+def storage_volumes() -> dict[str, Any]:
+    from yoga_dataset import list_storage_volumes
+
+    return list_storage_volumes()
 
 
 @app.post("/session/start")
@@ -156,6 +180,10 @@ def session_stop(body: SessionStopBody | None = None) -> dict[str, Any]:
                 "participant_name": body.participantName,
                 "poses_recorded": body.posesRecorded,
                 "notes": body.notes,
+                "collectionType": body.collectionType,
+                "storageLocation": body.storageLocation,
+                "connectedImus": body.connectedImus,
+                "connectedFootrestSensors": body.connectedFootrestSensors,
             }.items()
             if v is not None
         }
@@ -224,6 +252,55 @@ async def upload_webm(request: Request) -> dict[str, Any]:
     }
 
 
+@app.post("/session/upload/gdrive")
+def session_upload_gdrive(body: GdriveUploadBody | None = None) -> dict[str, Any]:
+    """Upload a completed session folder to Google Drive from within the app."""
+    from upload_sessions_to_gdrive import upload_single_session
+
+    session_dir = (body.directory if body else None) or store.status().get("directory")
+    if not session_dir:
+        return {"ok": False, "error": "no_session_directory"}
+
+    try:
+        result = upload_single_session(session_dir)
+        return result
+    except FileNotFoundError as e:
+        return {"ok": False, "error": str(e)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.get("/session/download/zip")
+def session_download_zip(directory: str | None = None) -> Any:
+    """Download a session folder as a ZIP file."""
+    import tempfile
+    import zipfile
+    from pathlib import Path
+
+    session_dir = Path(directory) if directory else None
+    if session_dir is None:
+        status = store.status()
+        session_dir = Path(status["directory"]) if status.get("directory") else None
+
+    if session_dir is None or not session_dir.is_dir():
+        return {"ok": False, "error": "no_session_directory"}
+
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
+    tmp.close()
+    zip_path = Path(tmp.name)
+
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for path in session_dir.rglob("*"):
+            if path.is_file():
+                zf.write(path, arcname=path.relative_to(session_dir.parent))
+
+    return FileResponse(
+        path=str(zip_path),
+        media_type="application/zip",
+        filename=f"{session_dir.name}.zip",
+    )
+
+
 @app.websocket("/ws/landmarks")
 async def ws_landmarks(ws: WebSocket) -> None:
     await ws.accept()
@@ -279,10 +356,10 @@ async def ws_video(ws: WebSocket) -> None:
 
 
 def main() -> None:
-    SESSIONS_ROOT.mkdir(parents=True, exist_ok=True)
     t = threading.Thread(target=_udp_loop, daemon=True, name="imu-udp")
     t.start()
-    print(f"[http] sessions root: {SESSIONS_ROOT}")
+    print(f"[http] collection staging (temp): {SESSIONS_ROOT}")
+    print("[http] exported datasets: D:\\YogaDataset or E:\\YogaDataset")
     print(f"[http] API http://0.0.0.0:{HTTP_PORT}")
     uvicorn.run(app, host="0.0.0.0", port=HTTP_PORT, log_level="info")
 

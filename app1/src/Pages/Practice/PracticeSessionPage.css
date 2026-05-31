@@ -15,15 +15,18 @@
 .practice-session__video-inner {
   position: relative;
   line-height: 0;
+  width: 100%;
   max-width: 100%;
   max-height: min(70vh, 640px);
 }
 
 .practice-session__video {
   display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
   max-width: 100%;
   max-height: min(70vh, 640px);
-  height: auto;
   vertical-align: top;
 }
 
@@ -53,4 +56,133 @@
 .practice-session__detected--bad {
   border-color: #dc3545 !important;
   background-color: rgba(220, 53, 69, 0.08);
+}
+
+.practice-countdown-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.65);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.practice-countdown-number {
+  font-size: 9rem;
+  font-weight: 900;
+  color: #f59e0b;
+  animation: practicePop 0.3s ease-out;
+  line-height: 1;
+}
+
+.practice-countdown-label {
+  font-size: 1.3rem;
+  color: rgba(255, 255, 255, 0.8);
+  margin-top: 16px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+@keyframes practicePop {
+  0% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.practice-recording-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  padding: 16px 20px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.75));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  z-index: 10;
+}
+
+.practice-timer-display {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.practice-rec-badge {
+  background: #ef4444;
+  color: white;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  animation: practiceRecBlink 1s infinite;
+}
+
+@keyframes practiceRecBlink {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+.practice-timer-text {
+  font-size: 2.2rem;
+  font-weight: 700;
+  color: white;
+  font-variant-numeric: tabular-nums;
+}
+
+.practice-progress-bar {
+  width: 100%;
+  max-width: 480px;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.25);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.practice-progress-fill {
+  height: 100%;
+  background: #ef4444;
+  transition: width 1s linear;
+}
+
+.practice-stop-btn {
+  background: white;
+  color: #ef4444;
+  border: 2px solid #ef4444;
+  padding: 10px 28px;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+
+.practice-stop-btn:hover {
+  background: #ef4444;
+  color: white;
+}
+
+.practice-max-note {
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.55);
+  letter-spacing: 1px;
+}
+
+.practice-save-panel {
+  border-color: #dee2e6 !important;
 }

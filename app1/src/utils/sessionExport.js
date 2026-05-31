@@ -1,6 +1,7 @@
 import JSZip from "jszip";
 import CONFIG from "../config";
 import { buildFileNames } from "./sessionNaming";
+import { buildLandmarksExportDocument } from "./landmarkExport";
 
 /**
  * @param {object} recording
@@ -29,23 +30,8 @@ async function createSessionZip(recording, metadata, participantId) {
 
   const imuPackets = recording.imuPackets || [];
 
-  function devicesWithPlaceholders(frame) {
-    const live =
-      frame.devices && typeof frame.devices === "object" ? frame.devices : {};
-    const out = { ...live };
-    CONFIG.SENSOR_SLOTS.filter((s) => s.status === "placeholder").forEach(
-      (slot) => {
-        if (!(slot.id in out)) {
-          out[slot.id] = {
-            status: "placeholder",
-            bodyPart: slot.bodyPart,
-            data: null,
-            note: "Sensor not yet available. Will be populated in future sessions.",
-          };
-        }
-      }
-    );
-    return out;
+  function devicesFromFrame(frame) {
+    return frame.devices && typeof frame.devices === "object" ? frame.devices : {};
   }
 
   zip.file(
@@ -61,14 +47,14 @@ async function createSessionZip(recording, metadata, participantId) {
           total_slots: CONFIG.TOTAL_SENSOR_COUNT,
           active_slots: CONFIG.ACTIVE_SENSOR_COUNT,
           placeholder_slots:
+            CONFIG.PLACEHOLDER_SENSOR_COUNT ??
             CONFIG.TOTAL_SENSOR_COUNT - CONFIG.ACTIVE_SENSOR_COUNT,
           slots: CONFIG.SENSOR_SLOTS.map((slot) => ({
             id: slot.id,
             bodyPart: slot.bodyPart,
             status: slot.status,
             hasData:
-              recording.sensorConfig?.connectedDuring?.includes(slot.id) ??
-              false,
+              recording.sensorConfig?.connectedDuring?.includes(slot.id) ?? false,
           })),
         },
         sensor_hardware: {
@@ -88,7 +74,7 @@ async function createSessionZip(recording, metadata, participantId) {
         },
         frames: imuPackets.map((frame) => ({
           relative_timestamp: frame.relative_timestamp,
-          devices: devicesWithPlaceholders(frame),
+          devices: devicesFromFrame(frame),
         })),
       },
       null,
@@ -113,6 +99,9 @@ async function createSessionZip(recording, metadata, participantId) {
     );
   }
 
+  const landmarksDoc = buildLandmarksExportDocument(recording.landmarks || [], {
+    videoFps: CONFIG.VIDEO_STREAM_FPS,
+  });
   zip.file(
     names.landmarks,
     JSON.stringify(
@@ -121,10 +110,7 @@ async function createSessionZip(recording, metadata, participantId) {
         poseName: recording.poseName,
         poseId: recording.poseId,
         recordedAt: recording.recordedAt,
-        totalFrames: recording.landmarks?.length || 0,
-        samplingRate: "30fps",
-        coordinateSystem: "normalized_0_to_1",
-        landmarks: recording.landmarks || [],
+        ...landmarksDoc,
       },
       null,
       2

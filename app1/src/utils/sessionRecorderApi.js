@@ -90,5 +90,32 @@ export function openLandmarksWebSocket() {
 }
 
 export function getSessionsRootDisplay() {
-  return CONFIG.SESSIONS_ROOT_DISPLAY || "E:\\SensorData\\Sessions";
+  return CONFIG.YOGA_DATASET_D_ROOT || "D:\\YogaDataset";
+}
+
+export async function fetchStorageVolumes() {
+  try {
+    const res = await fetch(`${BASE}/storage/volumes`);
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
+}
+
+export async function downloadSessionZip(sessionDirectory) {
+  const params = new URLSearchParams();
+  if (sessionDirectory) params.set("directory", sessionDirectory);
+  const res = await fetch(`${BASE}/session/download/zip?${params.toString()}`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Download failed (${res.status})`);
+  }
+  return res.blob();
+}
+
+export async function uploadSessionToGdrive(sessionDirectory) {
+  return postJson("/session/upload/gdrive", {
+    directory: sessionDirectory || undefined,
+  });
 }

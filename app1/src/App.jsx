@@ -17,7 +17,9 @@ import HardwarePage from "./Pages/HardwarePage";
 import SequencerPage from "./Pages/SequencerPage";
 import ReviewPage from "./Pages/ReviewPage";
 import PracticeHomePage from "./Pages/Practice/PracticeHomePage";
+import PracticeConsentPage from "./Pages/Practice/PracticeConsentPage";
 import PracticeSessionPage from "./Pages/Practice/PracticeSessionPage";
+import RequirePracticeConsent from "./Components/RequirePracticeConsent";
 import SensorStatusStrip from "./Components/SensorStatusStrip";
 import { SessionContextProvider } from "./context/SessionContext";
 import { PracticeContextProvider } from "./context/PracticeContext";
@@ -57,8 +59,23 @@ const App = () => {
                 </Route>
               </Route>
               <Route path="/login" element={<LoginPage />} />
-              <Route path="/practice" element={<PracticeHomePage />} />
-              <Route path="/practice/session" element={<PracticeSessionPage />} />
+              <Route path="/practice/consent" element={<PracticeConsentPage />} />
+              <Route
+                path="/practice"
+                element={
+                  <RequirePracticeConsent>
+                    <PracticeHomePage />
+                  </RequirePracticeConsent>
+                }
+              />
+              <Route
+                path="/practice/session"
+                element={
+                  <RequirePracticeConsent>
+                    <PracticeSessionPage />
+                  </RequirePracticeConsent>
+                }
+              />
               <Route
                 path="/metadata"
                 element={

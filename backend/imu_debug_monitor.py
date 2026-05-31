@@ -8,6 +8,7 @@ import threading
 import time
 from typing import Any
 
+from sensor_registry import merge_live_with_registry
 from session_store import _normalize_quaternion, _vec3
 
 OFFLINE_THRESHOLD_SEC = 3.0
@@ -115,7 +116,7 @@ class ImuDebugMonitor:
                 row["rssi"] = data["rssi"]
             response[sensor_id] = row
 
-        return response
+        return merge_live_with_registry(response)
 
 
 imu_monitor = ImuDebugMonitor()

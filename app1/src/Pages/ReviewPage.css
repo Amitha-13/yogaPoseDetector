@@ -94,3 +94,60 @@
   color: #9ca3af;
   margin-top: 2px;
 }
+
+.review-section {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+}
+
+.collection-type-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.collection-type-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  border: 2px solid #dee2e6;
+  border-radius: 10px;
+  cursor: pointer;
+  background: #fff;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.collection-type-card input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.collection-type-card--active {
+  border-color: #1f618d;
+  background: #eaf4fb;
+}
+
+.collection-type-card--disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.collection-type-card__label {
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.collection-type-card__desc {
+  font-size: 0.85rem;
+  color: #4b5563;
+}
+
+.collection-type-card__reason {
+  font-size: 0.78rem;
+  color: #b45309;
+  margin-top: 4px;
+}

@@ -1,5 +1,12 @@
 import React, { useEffect, useState } from "react";
 import CONFIG from "../../config";
+import {
+  capsuleVariant,
+  isSlotOnline,
+  normalizeImuPollPayload,
+  slotOfflineMessage,
+  slotStatusLabel,
+} from "../../utils/sensorStatus";
 import "./AppImuStatusStrip.css";
 
 const AppImuStatusStrip = () => {
@@ -24,11 +31,7 @@ const AppImuStatusStrip = () => {
         }
         const data = await res.json();
         setBridgeReachable(true);
-        const normalized = {};
-        Object.keys(data || {}).forEach((id) => {
-          normalized[id] = { online: data[id]?.online === true };
-        });
-        setImuDevices(normalized);
+        setImuDevices(normalizeImuPollPayload(data, CONFIG.SENSOR_SLOTS));
       } catch {
         if (!cancelled) {
           setBridgeReachable(false);
@@ -55,11 +58,16 @@ const AppImuStatusStrip = () => {
       </div>
       <div className="sensor-strip__capsules">
         {CONFIG.SENSOR_SLOTS.map((slot) => {
-          const isLive = imuDevices[slot.id]?.online === true;
+          const isLive = isSlotOnline(slot, imuDevices);
+          const variant = capsuleVariant(slot, isLive);
           return (
             <span
               key={slot.id}
-              className={`sensor-capsule sensor-capsule--${isLive ? "live" : "missing"}`}
+              className={`sensor-capsule sensor-capsule--${variant}`}
+              title={`${slot.label} • ${slot.bodyPart} • ${slotStatusLabel(
+                slot,
+                isLive
+              )} • ${slotOfflineMessage(slot)}`}
             >
               {slot.label}
             </span>

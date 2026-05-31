@@ -306,14 +306,15 @@ function SequencerPage() {
 
         playStartCue();
 
-        recordingStartRef.current = Date.now();
+        setRecordPhase("recording");
 
-        startRecording(streamRef.current, {
+        await startRecording(streamRef.current, {
           sessionTZero: sessionTZero ?? undefined,
           videoElement: videoRef.current,
+          persistOffline: true,
         });
 
-        setRecordPhase("recording");
+        recordingStartRef.current = getTZero() ?? Date.now();
       })();
     }, 3000);
 
@@ -362,37 +363,40 @@ function SequencerPage() {
 
     const initHandle = requestAnimationFrame(() => {
       if (cancelled) return;
-      if (videoRef.current && canvasRef.current) {
-        try {
-          mediaPipeCleanupRef.current = initMediaPipe(
-            videoRef.current,
-            canvasRef.current,
-            (frameData) => landmarkBufferRef.current.push(frameData),
-            tZeroRef.current,
-            (rawLandmarks) => {
-              const ws = wsRef.current;
-              if (ws && ws.readyState === WebSocket.OPEN) {
-                const ts = Date.now() / 1000;
-                ws.send(
-                  JSON.stringify({
-                    timestamp: ts,
-                    frame_id: landmarkBufferRef.current.length,
-                    pose_id: pose.id,
-                    landmarks: rawLandmarks.map((lm) => ({
-                      x: lm.x,
-                      y: lm.y,
-                      z: lm.z ?? 0,
-                      visibility: lm.visibility ?? 0,
-                    })),
-                  })
-                );
+      requestAnimationFrame(() => {
+        if (cancelled) return;
+        if (videoRef.current && canvasRef.current) {
+          try {
+            mediaPipeCleanupRef.current = initMediaPipe(
+              videoRef.current,
+              canvasRef.current,
+              (frameData) => landmarkBufferRef.current.push(frameData),
+              tZeroRef.current,
+              (rawLandmarks) => {
+                const ws = wsRef.current;
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                  const ts = Date.now() / 1000;
+                  ws.send(
+                    JSON.stringify({
+                      timestamp: ts,
+                      frame_id: landmarkBufferRef.current.length,
+                      pose_id: pose.id,
+                      landmarks: rawLandmarks.map((lm) => ({
+                        x: lm.x,
+                        y: lm.y,
+                        z: lm.z ?? 0,
+                        visibility: lm.visibility ?? 0,
+                      })),
+                    })
+                  );
+                }
               }
-            }
-          );
-        } catch {
-          /* MediaPipe CDN may be blocked */
+            );
+          } catch {
+            /* MediaPipe CDN may be blocked */
+          }
         }
-      }
+      });
     });
 
     setRecordingSeconds(0);
@@ -435,6 +439,7 @@ function SequencerPage() {
       const { videoBlob, imuPackets, storedOffline } = await stopRecording({
         poseId: pose.id,
         poseName: pose.name,
+        persistOffline: true,
       });
 
       const { participantId: pid, metadata: meta, username: uname } =
@@ -487,16 +492,9 @@ function SequencerPage() {
         sensorConfig: {
           totalSlots: CONFIG.TOTAL_SENSOR_COUNT,
           activeSlots: CONFIG.ACTIVE_SENSOR_COUNT,
-          placeholderSlots:
-            CONFIG.TOTAL_SENSOR_COUNT - CONFIG.ACTIVE_SENSOR_COUNT,
-          activeSensorIds: CONFIG.SENSOR_SLOTS.filter((s) => s.status === "active").map(
-            (s) => s.id
-          ),
-          placeholderIds: CONFIG.SENSOR_SLOTS.filter(
-            (s) => s.status === "placeholder"
-          ).map((s) => s.id),
+          activeSensorIds: CONFIG.SENSOR_SLOTS.map((s) => s.id),
           connectedDuring: storedOffline
-            ? CONFIG.SENSOR_SLOTS.filter((s) => s.status === "active").map((s) => s.id)
+            ? CONFIG.SENSOR_SLOTS.map((s) => s.id)
             : Object.keys(imuPackets[0]?.devices || {}),
         },
       });
@@ -699,6 +697,7 @@ function SequencerPage() {
         <div className="sequencer-record-root">
           <div
             className={
+              recordPhase === "getReady" ||
               recordPhase === "recording" ||
               recordPhase === "saved"
                 ? "sequencer-video-wrap sequencer-video-wrap-full"
@@ -709,6 +708,7 @@ function SequencerPage() {
             <video
               ref={videoRef}
               className={
+                recordPhase === "getReady" ||
                 recordPhase === "recording" ||
                 recordPhase === "saved"
                   ? "sequencer-video-bg"

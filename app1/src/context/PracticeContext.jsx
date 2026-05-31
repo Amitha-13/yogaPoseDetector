@@ -1,5 +1,12 @@
 import React, { createContext, useContext, useMemo, useState } from "react";
 
+const defaultConsentChecks = {
+  videoRecording: false,
+  poseAnalysis: false,
+  dataStorage: false,
+  termsAccepted: false,
+};
+
 const PracticeContext = createContext(null);
 
 export const PracticeContextProvider = ({ children }) => {
@@ -8,6 +15,14 @@ export const PracticeContextProvider = ({ children }) => {
   const [confidence, setConfidence] = useState(0);
   const [corrections, setCorrections] = useState([]);
   const [isSessionActive, setIsSessionActive] = useState(false);
+  const [consentChecks, setConsentChecks] = useState(defaultConsentChecks);
+  const [practiceSessionId, setPracticeSessionId] = useState(null);
+  const [offlineSessionDirectory, setOfflineSessionDirectory] = useState(null);
+
+  const consentGiven = useMemo(
+    () => Object.values(consentChecks).every(Boolean),
+    [consentChecks]
+  );
 
   const value = useMemo(
     () => ({
@@ -21,8 +36,25 @@ export const PracticeContextProvider = ({ children }) => {
       setCorrections,
       isSessionActive,
       setIsSessionActive,
+      consentChecks,
+      setConsentChecks,
+      consentGiven,
+      practiceSessionId,
+      setPracticeSessionId,
+      offlineSessionDirectory,
+      setOfflineSessionDirectory,
     }),
-    [selectedPose, detectedPose, confidence, corrections, isSessionActive]
+    [
+      selectedPose,
+      detectedPose,
+      confidence,
+      corrections,
+      isSessionActive,
+      consentChecks,
+      consentGiven,
+      practiceSessionId,
+      offlineSessionDirectory,
+    ]
   );
 
   return <PracticeContext.Provider value={value}>{children}</PracticeContext.Provider>;

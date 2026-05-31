@@ -1,5 +1,7 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { POSES } from "../../data/poses";
+import { usePractice } from "../../context/PracticeContext";
 import "./PracticeHomePage.css";
 import imgMountain from "../../assets/yoga13.jpg";
 import imgTree from "../../assets/yoga20.jpg";
@@ -11,31 +13,31 @@ import imgCobra from "../../assets/yoga15.jpg";
 import imgBridge from "../../assets/yoga232.png";
 import imgChild from "../../assets/yoga9.jpg";
 
-export const POSES = [
-  { name: "Mountain Pose", sanskrit: "Tadasana", duration: 30, image: imgMountain },
-  { name: "Tree Pose", sanskrit: "Vrikshasana", duration: 30, image: imgTree },
-  { name: "Warrior I", sanskrit: "Virabhadrasana I", duration: 30, image: imgWarrior },
-  {
-    name: "Warrior II",
-    sanskrit: "Virabhadrasana II",
-    duration: 30,
-    image: imgWarrior,
-  },
-  { name: "Triangle Pose", sanskrit: "Trikonasana", duration: 30, image: imgTriangle },
-  {
-    name: "Downward Dog",
-    sanskrit: "Adho Mukha Svanasana",
-    duration: 30,
-    image: imgDownDog,
-  },
-  { name: "Chair Pose", sanskrit: "Utkatasana", duration: 30, image: imgChair },
-  { name: "Cobra Pose", sanskrit: "Bhujangasana", duration: 30, image: imgCobra },
-  { name: "Bridge Pose", sanskrit: "Setu Bandhasana", duration: 30, image: imgBridge },
-  { name: "Child's Pose", sanskrit: "Balasana", duration: 30, image: imgChild },
-];
+const poseImageMap = {
+  "Mountain Pose": imgMountain,
+  "Tree Pose": imgTree,
+  "Hand-to-Foot Pose": imgDownDog,
+  "Half Wheel Pose": imgWarrior,
+  "Half Waist Wheel Pose": imgWarrior,
+  "Triangle Pose": imgTriangle,
+  "Revolved Triangle Pose": imgTriangle,
+  "Half Camel Pose": imgBridge,
+  "Twisted Pose": imgChair,
+  "Crocodile Pose": imgChild,
+  "Cobra Pose": imgCobra,
+  "Half Plough Pose": imgChair,
+  "Corpse Pose": imgChild,
+};
 
 const PracticeHomePage = () => {
   const navigate = useNavigate();
+  const { consentGiven } = usePractice();
+
+  useEffect(() => {
+    if (!consentGiven) {
+      navigate("/practice/consent", { replace: true });
+    }
+  }, [consentGiven, navigate]);
 
   return (
     <div className="practice-home">
@@ -48,7 +50,7 @@ const PracticeHomePage = () => {
 
       <div className="row g-4">
         {POSES.map((pose) => (
-          <div key={pose.name} className="col-12 col-sm-6 col-lg-4">
+          <div key={pose.id} className="col-12 col-sm-6 col-lg-4">
             <div className="practice-home__card card h-100 shadow-sm">
               <div className="card-body d-flex flex-column">
                 <h2 className="practice-home__pose-name card-title h5">
@@ -56,7 +58,7 @@ const PracticeHomePage = () => {
                 </h2>
                 <div className="practice-home__img-wrap">
                   <img
-                    src={pose.image}
+                    src={poseImageMap[pose.name] || imgMountain}
                     alt={`${pose.name} (${pose.sanskrit}) reference`}
                     className="practice-home__pose-img"
                     loading="lazy"

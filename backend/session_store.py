@@ -1,7 +1,8 @@
 """
-Offline session storage under SESSIONS_ROOT (default D:\\SensorData\\Sessions).
+Temporary staging for active collection sessions (not exported dataset storage).
 
-Layout:
+Exported participant data is written to YogaDataset on session stop (see yoga_dataset.py).
+Staging layout:
   {SESSIONS_ROOT}/session_YYYY-MM-DD/{name}_{participantId}/{poseId}_{poseName}/
     video.webm, landmarks.json, metadata.json, imu_data.json (optional)
 """
@@ -12,6 +13,7 @@ import json
 import os
 import platform
 import shutil
+import tempfile
 import threading
 import time
 from dataclasses import dataclass, field
@@ -19,16 +21,16 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-_external_sessions_root = os.environ.get("SESSIONS_ROOT_DISPLAY")
-if _external_sessions_root:
-    SESSIONS_ROOT = Path(_external_sessions_root)
-    print(f"[Storage] External storage detected. Using: {SESSIONS_ROOT}")
-else:
-    SESSIONS_ROOT = Path(r"D:\SensorData\Sessions")
-    print("[Storage Warning] External hard disk not detected.")
-    print("[Storage Warning] Data will be stored in D drive instead.")
 
-SESSIONS_ROOT.mkdir(parents=True, exist_ok=True)
+def _resolve_staging_root() -> Path:
+    """Ephemeral staging only — never D:\\SensorData."""
+    override = os.environ.get("COLLECTION_STAGING_ROOT")
+    if override:
+        return Path(override)
+    return Path(tempfile.gettempdir()) / "YogaCollection" / "staging"
+
+
+SESSIONS_ROOT = _resolve_staging_root()
 
 
 def _unix_timestamp() -> float:
@@ -176,6 +178,31 @@ class JsonlWriter:
         dest.write_text(json.dumps(items, indent=2), encoding="utf-8")
         return len(items)
 
+    def finalize_landmarks_document(
+        self,
+        dest: Path,
+        *,
+        sampling_rate: str = "30fps",
+        drop_private: bool = True,
+    ) -> int:
+        items: list[Any] = []
+        with self._lock:
+            if self.path.exists():
+                for line in self.path.read_text(encoding="utf-8").splitlines():
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        obj = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if drop_private and isinstance(obj, dict):
+                        obj = {k: v for k, v in obj.items() if not k.startswith("_")}
+                    items.append(obj)
+        from pose_landmark_schema import write_landmarks_json
+
+        return write_landmarks_json(dest, items, sampling_rate=sampling_rate)
+
 
 @dataclass
 class PoseRecording:
@@ -240,6 +267,24 @@ class SessionStore:
         self._lock = threading.Lock()
         self.active: ActiveSession | None = None
 
+    @staticmethod
+    def _write_imu_jsonl_copy(pose: PoseRecording) -> None:
+        """Keep imu_data.jsonl alongside legacy imu_data.json array for export compatibility."""
+        jsonl_path = pose.directory / "imu_data.jsonl"
+        if not pose.imu_json_path.exists():
+            return
+        try:
+            entries = json.loads(pose.imu_json_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return
+        if not isinstance(entries, list):
+            return
+        jsonl_path.parent.mkdir(parents=True, exist_ok=True)
+        with jsonl_path.open("w", encoding="utf-8") as f:
+            for entry in entries:
+                if isinstance(entry, dict):
+                    f.write(json.dumps(entry, separators=(",", ":")) + "\n")
+
     def start(
         self,
         *,
@@ -259,6 +304,7 @@ class SessionStore:
             participant_folder = participant_dir_name(participant_name, participant_id)
             session_id = f"{session_day}/{participant_folder}"
             directory = self.root / session_day / participant_folder
+            self.root.mkdir(parents=True, exist_ok=True)
             directory.mkdir(parents=True, exist_ok=True)
 
             session = ActiveSession(
@@ -441,7 +487,11 @@ class SessionStore:
         if pose is None:
             return {"ok": True, "note": "no_active_pose"}
 
-        landmark_count = pose.landmarks_writer.finalize_array(pose.landmarks_json_path)
+        sampling_rate = f"{int(session.video_fps)}fps" if session.video_fps else "30fps"
+        landmark_count = pose.landmarks_writer.finalize_landmarks_document(
+            pose.landmarks_json_path,
+            sampling_rate=sampling_rate,
+        )
         print("Saved landmarks:", pose.landmarks_json_path)
 
         imu_count = pose.imu_writer.finalize_array(pose.imu_json_path)
@@ -449,6 +499,7 @@ class SessionStore:
             pose.imu_json_path.write_text("[]", encoding="utf-8")
         if imu_count:
             print("Saved IMU:", pose.imu_json_path)
+            self._write_imu_jsonl_copy(pose)
 
         pose.landmarks_jsonl_path.unlink(missing_ok=True)
         pose.imu_jsonl_path.unlink(missing_ok=True)
@@ -493,6 +544,10 @@ class SessionStore:
         ended_at = datetime.now().isoformat(timespec="seconds")
         duration_sec = max(0.0, time.time() - session.t_zero)
 
+        extra = extra_metadata or {}
+        collection_type = extra.get("collectionType") or extra.get("collection_type")
+        storage_location = extra.get("storageLocation") or extra.get("storage_location")
+
         metadata = {
             "session_id": session.session_id,
             "session_day": session.session_day,
@@ -513,7 +568,7 @@ class SessionStore:
                 "platform": platform.platform(),
                 "python": platform.python_version(),
             },
-            **(extra_metadata or {}),
+            **extra,
         }
         session.metadata_path.write_text(
             json.dumps(metadata, indent=2), encoding="utf-8"
@@ -521,12 +576,53 @@ class SessionStore:
 
         print("Session finalized:", session.directory)
 
-        return {
+        result: dict[str, Any] = {
             "ok": True,
             "session_id": session.session_id,
             "directory": str(session.directory),
+            "staging_directory": str(session.directory),
             "metadata": metadata,
         }
+
+        if collection_type and storage_location:
+            from yoga_dataset import export_session_to_yoga_dataset
+
+            export_meta = {
+                k: v
+                for k, v in {
+                    "participant_id": extra.get("participant_id"),
+                    "participant_name": extra.get("participant_name"),
+                    "poses_recorded": extra.get("poses_recorded"),
+                }.items()
+                if v is not None
+            }
+            yoga_export = export_session_to_yoga_dataset(
+                session.directory,
+                collection_type=str(collection_type),
+                storage_location=str(storage_location),
+                participant_name=extra.get("participant_name")
+                or session.participant_name,
+                participant_id=extra.get("participant_id") or session.participant_id,
+                connected_imus=extra.get("connectedImus") or extra.get("connected_imus"),
+                connected_footrest_sensors=extra.get("connectedFootrestSensors")
+                or extra.get("connected_footrest_sensors"),
+                session_metadata_extra=export_meta,
+            )
+            result["yoga_dataset"] = yoga_export
+            if yoga_export.get("ok") and yoga_export.get("directory"):
+                result["directory"] = yoga_export["directory"]
+                result["yoga_dataset_directory"] = yoga_export["directory"]
+                staging_dir = Path(session.directory)
+                if staging_dir.exists():
+                    shutil.rmtree(staging_dir, ignore_errors=True)
+                    day_parent = staging_dir.parent
+                    if day_parent.exists() and day_parent.is_dir():
+                        try:
+                            next(day_parent.iterdir())
+                        except StopIteration:
+                            day_parent.rmdir()
+
+        return result
 
     def status(self) -> dict[str, Any]:
         with self._lock:
