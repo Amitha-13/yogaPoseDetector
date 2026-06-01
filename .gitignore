@@ -9,6 +9,9 @@ src/config.js
 # Python virtual environment
 backend/venv/
 
+#json file(google service account)
+backend/gdrive_service_account.json
+
 # Python cache
 backend/__pycache__/
 *.pyc
