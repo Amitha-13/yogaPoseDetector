@@ -89,8 +89,33 @@ export function openLandmarksWebSocket() {
   return new WebSocket(wsUrl);
 }
 
-export function getSessionsRootDisplay() {
+export function getSessionsRootDisplay(storageLocation = "D") {
+  return getYogaDatasetRootForLocation(storageLocation);
+}
+
+export function getYogaDatasetRootForLocation(storageLocation = "D") {
+  const loc = String(storageLocation || "D").trim().toUpperCase();
+  if (loc.startsWith("E")) {
+    return CONFIG.YOGA_DATASET_E_ROOT || "E:\\YogaDataset";
+  }
   return CONFIG.YOGA_DATASET_D_ROOT || "D:\\YogaDataset";
+}
+
+export function getGdriveFolderInfo() {
+  return {
+    name: CONFIG.YOGA_GDRIVE_FOLDER_NAME || "YogaDataset",
+    id: CONFIG.YOGA_GDRIVE_FOLDER_ID || "1KyRLCML879M7x5LZic1s3ozYtH7Bfvo8",
+  };
+}
+
+export async function fetchGdriveSyncStatus() {
+  try {
+    const res = await fetch(`${BASE}/sync/gdrive/status`);
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
 }
 
 export async function fetchStorageVolumes() {

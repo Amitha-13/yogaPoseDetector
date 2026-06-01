@@ -32,13 +32,15 @@ import {
 
 import {
 
-  getSessionsRootDisplay,
+  getYogaDatasetRootForLocation,
+
+  getGdriveFolderInfo,
+
+  fetchGdriveSyncStatus,
 
   stopOfflineSession,
 
   downloadSessionZip,
-
-  uploadSessionToGdrive,
 
   fetchStorageVolumes,
 
@@ -92,11 +94,16 @@ function ReviewPage() {
 
   const [copied, setCopied] = useState(false);
 
-  const [gdriveStatus, setGdriveStatus] = useState(null);
-
-  const [gdriveUploading, setGdriveUploading] = useState(false);
+  const [gdriveSyncStatus, setGdriveSyncStatus] = useState(null);
 
   const [downloading, setDownloading] = useState(false);
+
+  const gdriveFolder = useMemo(() => getGdriveFolderInfo(), []);
+
+  const selectedDatasetRoot = useMemo(
+    () => getYogaDatasetRootForLocation(storageLocation),
+    [storageLocation]
+  );
 
 
 
@@ -406,7 +413,62 @@ function ReviewPage() {
 
   const sessionFinalized = Boolean(offlineFinalize?.ok);
 
+  useEffect(() => {
+    if (!CONFIG.USE_OFFLINE_SESSION_RECORDER || !sessionFinalized) {
+      return undefined;
+    }
+    let cancelled = false;
+    const pollMs = 4000;
 
+    const poll = async () => {
+      const status = await fetchGdriveSyncStatus();
+      if (!cancelled && status) {
+        setGdriveSyncStatus(status);
+      }
+    };
+
+    void poll();
+    const id = setInterval(() => void poll(), pollMs);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [sessionFinalized]);
+
+  const gdriveSyncLabel = useMemo(() => {
+    if (!sessionFinalized) {
+      return { state: "pending", text: "Pending", detail: "Available after local save." };
+    }
+    const raw = gdriveSyncStatus?.gdrive_sync_state || "pending";
+    const detail = gdriveSyncStatus?.gdrive_sync_detail || "";
+    const labels = {
+      pending: "Pending",
+      syncing: "Syncing",
+      synced: "Synced",
+      failed: "Failed",
+    };
+    return {
+      state: raw,
+      text: labels[raw] || "Pending",
+      detail,
+    };
+  }, [sessionFinalized, gdriveSyncStatus]);
+
+  const getPoseSaveStatus = useCallback(
+    (recording) => {
+      if (recording.skipped) {
+        return { label: "Skipped", className: "text-secondary" };
+      }
+      if (finalizingOffline) {
+        return { label: "Saving…", className: "text-primary" };
+      }
+      if (sessionFinalized) {
+        return { label: "Saved on Disk", className: "text-success" };
+      }
+      return { label: "Pending Save", className: "text-muted" };
+    },
+    [finalizingOffline, sessionFinalized]
+  );
 
   const handleDownloadZip = useCallback(async () => {
 
@@ -432,7 +494,7 @@ function ReviewPage() {
 
     } catch (err) {
 
-      setGdriveStatus({ ok: false, message: err?.message || "Download failed." });
+      console.error("Session ZIP download failed:", err);
 
     } finally {
 
@@ -441,38 +503,6 @@ function ReviewPage() {
     }
 
   }, [sessionDirectory, participantId]);
-
-
-
-  const handleGdriveUpload = useCallback(async () => {
-
-    setGdriveUploading(true);
-
-    setGdriveStatus(null);
-
-    try {
-
-      const result = await uploadSessionToGdrive(sessionDirectory);
-
-      setGdriveStatus({
-
-        ok: Boolean(result?.ok),
-
-        message: result?.message || result?.error || "Upload complete.",
-
-      });
-
-    } catch (err) {
-
-      setGdriveStatus({ ok: false, message: err?.message || "Upload failed." });
-
-    } finally {
-
-      setGdriveUploading(false);
-
-    }
-
-  }, [sessionDirectory]);
 
 
 
@@ -767,7 +797,48 @@ function ReviewPage() {
 
           </section>
 
-
+          {CONFIG.USE_OFFLINE_SESSION_RECORDER && (
+            <section
+              className="review-section destination-panel mb-4"
+              aria-labelledby="destination-heading"
+            >
+              <h2 id="destination-heading" className="h5 fw-bold mb-3">
+                Storage destinations
+              </h2>
+              <p className="mb-1">
+                <strong>Selected dataset root:</strong>{" "}
+                <code className="user-select-all">{selectedDatasetRoot}</code>
+              </p>
+              <p className="mb-1">
+                <strong>Google Drive destination:</strong>{" "}
+                <code>{gdriveFolder.name}</code>
+              </p>
+              <p className="mb-2 small text-muted">
+                Folder ID: <code className="user-select-all">{gdriveFolder.id}</code>
+              </p>
+              <p className="mb-1">
+                <strong>Local storage:</strong>{" "}
+                {sessionFinalized ? (
+                  <span className="text-success">Saved on Disk</span>
+                ) : finalizingOffline ? (
+                  <span className="text-primary">Saving…</span>
+                ) : (
+                  <span className="text-muted">Pending Save</span>
+                )}
+              </p>
+              <p className="mb-0">
+                <strong>Google Drive sync:</strong>{" "}
+                <span
+                  className={`gdrive-sync-badge gdrive-sync-badge--${gdriveSyncLabel.state}`}
+                >
+                  {gdriveSyncLabel.text}
+                </span>
+              </p>
+              {gdriveSyncLabel.detail && (
+                <p className="small text-muted mt-1 mb-0">{gdriveSyncLabel.detail}</p>
+              )}
+            </section>
+          )}
 
           {CONFIG.USE_OFFLINE_SESSION_RECORDER && (
 
@@ -795,7 +866,7 @@ function ReviewPage() {
 
               <p className="small text-muted mt-2 mb-0">
 
-                Export root: <code>{getSessionsRootDisplay()}</code>
+                Will export to: <code>{selectedDatasetRoot}</code>
 
               </p>
 
@@ -823,9 +894,27 @@ function ReviewPage() {
 
           <p className="mb-1">
 
-            <strong>Storage:</strong>{" "}
+            <strong>Selected dataset root:</strong>{" "}
 
-            <code>{storageLocation}:\YogaDataset</code>
+            <code>{selectedDatasetRoot}</code>
+
+          </p>
+
+          <p className="mb-1">
+
+            <strong>Google Drive sync:</strong>{" "}
+
+            <span
+              className={`gdrive-sync-badge gdrive-sync-badge--${gdriveSyncLabel.state}`}
+            >
+              {gdriveSyncLabel.text}
+            </span>
+
+            {gdriveSyncLabel.detail && (
+
+              <span className="small text-muted d-block mt-1">{gdriveSyncLabel.detail}</span>
+
+            )}
 
           </p>
 
@@ -863,33 +952,7 @@ function ReviewPage() {
 
             </button>
 
-            <button
-
-              type="button"
-
-              className="btn btn-sm btn-outline-dark"
-
-              disabled={gdriveUploading || !sessionDirectory}
-
-              onClick={() => void handleGdriveUpload()}
-
-            >
-
-              {gdriveUploading ? "Uploading…" : "Upload to Google Drive"}
-
-            </button>
-
           </div>
-
-          {gdriveStatus && (
-
-            <p className={`small mt-2 mb-0 ${gdriveStatus.ok ? "text-success" : "text-danger"}`}>
-
-              {gdriveStatus.message}
-
-            </p>
-
-          )}
 
         </div>
 
@@ -1009,19 +1072,17 @@ function ReviewPage() {
 
                   <td>
 
-                    {r.skipped ? (
+                    {(() => {
 
-                      <span className="text-secondary">Skipped</span>
+                      const poseStatus = getPoseSaveStatus(r);
 
-                    ) : r.storedOffline ? (
+                      return (
 
-                      <span className="text-success">Saved on disk</span>
+                        <span className={poseStatus.className}>{poseStatus.label}</span>
 
-                    ) : (
+                      );
 
-                      <span className="text-success">Recorded</span>
-
-                    )}
+                    })()}
 
                   </td>
 

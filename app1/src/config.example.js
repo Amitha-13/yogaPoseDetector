@@ -207,6 +207,9 @@ const CONFIG = {
   /** Exported dataset root (Review page storage selection) */
   YOGA_DATASET_D_ROOT: "D:\\YogaDataset",
   YOGA_DATASET_E_ROOT: "E:\\YogaDataset",
+  /** Google Drive mirror target (informational; backend sync uses same ID) */
+  YOGA_GDRIVE_FOLDER_NAME: "YogaDataset",
+  YOGA_GDRIVE_FOLDER_ID: "1KyRLCML879M7x5LZic1s3ozYtH7Bfvo8",
   /** Data Collection: offline recorder + YogaDataset export */
   USE_OFFLINE_SESSION_RECORDER: true,
   /** Yoga Practice must not write dataset folders to disk */
