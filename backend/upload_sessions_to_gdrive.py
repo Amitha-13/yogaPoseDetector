@@ -1,16 +1,24 @@
 #!/usr/bin/env python3
 """
-Batch-upload completed sessions to Google Drive (post-session only).
+Upload sessions or sync YogaDataset to Google Drive.
 
-Usage:
+YogaDataset (recommended, incremental mirror):
+  python upload_sessions_to_gdrive.py --sync-yoga
+  python upload_sessions_to_gdrive.py --sync-yoga --dry-run
+
+Legacy zip-per-session upload (staging / old Sessions layout):
   python upload_sessions_to_gdrive.py
   python upload_sessions_to_gdrive.py "E:\\SensorData\\Sessions"
   python upload_sessions_to_gdrive.py --dry-run
 
-Requires credentials (pick one):
-  - GOOGLE_APPLICATION_CREDENTIALS → service account JSON
-  - backend/gdrive_credentials.json (service account)
-  - Interactive OAuth: backend/gdrive_token.json (created on first run)
+Background service (every 5 minutes):
+  python yoga_dataset_gdrive_sync.py --loop
+
+Credentials (pick one):
+  - backend/gdrive_service_account.json (preferred)
+  - GOOGLE_APPLICATION_CREDENTIALS
+  - backend/gdrive_credentials.json
+  - Interactive OAuth: backend/gdrive_token.json
 
 Does NOT run during recording.
 """
@@ -29,8 +37,10 @@ SESSIONS_DEFAULT = Path(
     os.environ.get("SESSIONS_ROOT", r"E:\SensorData\Sessions")
 )
 
-# Optional: set in env or edit for your shared Drive folder
-GDRIVE_PARENT_FOLDER_ID = os.environ.get("YOGA_DATASET_FOLDER_ID", "")
+# Shared Drive folder "YogaDataset"
+GDRIVE_PARENT_FOLDER_ID = os.environ.get(
+    "YOGA_DATASET_FOLDER_ID", "1KyRLCML879M7x5LZic1s3ozYtH7Bfvo8"
+)
 
 
 def _load_google_deps():
@@ -62,44 +72,10 @@ SCOPES = ["https://www.googleapis.com/auth/drive.file"]
 
 
 def get_drive_service():
-    (
-        service_account,
-        Credentials,
-        InstalledAppFlow,
-        Request,
-        build,
-        _MediaFileUpload,
-    ) = _load_google_deps()
+    """Delegate to gdrive_sync (service account + shared folder)."""
+    from gdrive_sync import get_drive_service as _get
 
-    backend_dir = Path(__file__).resolve().parent
-    sa_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS") or str(
-        backend_dir / "gdrive_credentials.json"
-    )
-    token_path = backend_dir / "gdrive_token.json"
-    oauth_client = backend_dir / "gdrive_oauth_client.json"
-
-    creds = None
-    if os.path.isfile(sa_path):
-        creds = service_account.Credentials.from_service_account_file(
-            sa_path, scopes=SCOPES
-        )
-    elif token_path.exists():
-        creds = Credentials.from_authorized_user_file(str(token_path), SCOPES)
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-    elif oauth_client.exists():
-        flow = InstalledAppFlow.from_client_secrets_file(str(oauth_client), SCOPES)
-        creds = flow.run_local_server(port=0)
-        token_path.write_text(creds.to_json(), encoding="utf-8")
-    else:
-        print(
-            f"No credentials found. Place service account at:\n  {sa_path}\n"
-            f"or OAuth client at:\n  {oauth_client}",
-            file=sys.stderr,
-        )
-        raise SystemExit(1)
-
-    return build("drive", "v3", credentials=creds, cache_discovery=False)
+    return _get()
 
 
 def create_folder(service, name: str, parent_id: str) -> str:
@@ -261,11 +237,28 @@ def main() -> None:
         "sessions_root",
         nargs="?",
         default=str(SESSIONS_DEFAULT),
-        help="Path to Sessions folder",
+        help="Path to Sessions folder (legacy zip upload)",
     )
     parser.add_argument("--parent-folder-id", default=GDRIVE_PARENT_FOLDER_ID)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--sync-yoga",
+        action="store_true",
+        help="Incremental sync of D:/E: YogaDataset (see yoga_dataset_gdrive_sync.py)",
+    )
     args = parser.parse_args()
+
+    if args.sync_yoga:
+        from gdrive_sync import run_incremental_sync
+
+        result = run_incremental_sync(
+            drive_parent_id=args.parent_folder_id or None,
+            dry_run=args.dry_run,
+        )
+        print(json.dumps(result, indent=2))
+        if not result.get("ok"):
+            raise SystemExit(1)
+        return
 
     results = upload_sessions_to_gdrive(
         args.sessions_root,

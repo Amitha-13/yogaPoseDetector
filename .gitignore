@@ -11,6 +11,8 @@ backend/venv/
 
 #json file(google service account)
 backend/gdrive_service_account.json
+backend/.gdrive_sync_state.json
+backend/dataset_sync_config.json
 
 # Python cache
 backend/__pycache__/

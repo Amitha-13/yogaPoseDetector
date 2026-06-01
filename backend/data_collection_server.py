@@ -190,6 +190,13 @@ def session_stop(body: SessionStopBody | None = None) -> dict[str, Any]:
     result = store.stop(extra_metadata=extra)
     if result.get("ok") and result.get("directory"):
         print("Session finalized:", result["directory"])
+    if result.get("ok") and (result.get("yoga_dataset") or {}).get("ok"):
+        try:
+            from gdrive_sync import schedule_background_sync
+
+            schedule_background_sync()
+        except Exception as sync_err:
+            print("[gdrive-sync] could not schedule post-save sync:", sync_err)
     return result
 
 
@@ -254,20 +261,23 @@ async def upload_webm(request: Request) -> dict[str, Any]:
 
 @app.post("/session/upload/gdrive")
 def session_upload_gdrive(body: GdriveUploadBody | None = None) -> dict[str, Any]:
-    """Upload a completed session folder to Google Drive from within the app."""
-    from upload_sessions_to_gdrive import upload_single_session
+    """Trigger incremental YogaDataset sync (non-blocking; does not wait for upload)."""
+    from gdrive_sync import schedule_background_sync
 
-    session_dir = (body.directory if body else None) or store.status().get("directory")
-    if not session_dir:
-        return {"ok": False, "error": "no_session_directory"}
+    schedule_background_sync()
+    return {
+        "ok": True,
+        "status": "scheduled",
+        "message": "Google Drive sync scheduled in background.",
+    }
 
-    try:
-        result = upload_single_session(session_dir)
-        return result
-    except FileNotFoundError as e:
-        return {"ok": False, "error": str(e)}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
+
+@app.get("/sync/gdrive/status")
+def gdrive_sync_status() -> dict[str, Any]:
+    """Background Google Drive sync status (for future UI)."""
+    from gdrive_sync import get_sync_status
+
+    return get_sync_status()
 
 
 @app.get("/session/download/zip")
@@ -355,9 +365,37 @@ async def ws_video(ws: WebSocket) -> None:
         pass
 
 
+def _gdrive_sync_loop() -> None:
+    import os
+
+    interval = int(os.environ.get("YOGA_GDRIVE_SYNC_INTERVAL_SEC", "300"))
+    time.sleep(15)
+    while True:
+        try:
+            from gdrive_sync import run_incremental_sync
+
+            run_incremental_sync()
+        except Exception as exc:
+            print("[gdrive-sync] periodic sync error:", exc)
+        time.sleep(max(30, interval))
+
+
 def main() -> None:
+    import os
+
     t = threading.Thread(target=_udp_loop, daemon=True, name="imu-udp")
     t.start()
+    disabled = os.environ.get("YOGA_GDRIVE_SYNC_DISABLED", "").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    if not disabled:
+        sync_t = threading.Thread(
+            target=_gdrive_sync_loop, daemon=True, name="gdrive-sync-loop"
+        )
+        sync_t.start()
+        print("[gdrive-sync] background loop enabled (every 300s; set YOGA_GDRIVE_SYNC_DISABLED=1 to off)")
     print(f"[http] collection staging (temp): {SESSIONS_ROOT}")
     print("[http] exported datasets: D:\\YogaDataset or E:\\YogaDataset")
     print(f"[http] API http://0.0.0.0:{HTTP_PORT}")

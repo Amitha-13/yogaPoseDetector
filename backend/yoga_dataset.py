@@ -30,6 +30,21 @@ COLLECTION_TYPE_DIRS = {
 
 YOGA_DATASET_FOLDER = "YogaDataset"
 
+_SYNC_CONFIG_PATH = Path(__file__).resolve().parent / "dataset_sync_config.json"
+
+
+def write_dataset_sync_config(storage_location: str) -> None:
+    """Persist last export drive choice for the background Google Drive sync service."""
+    loc = (storage_location or "D").strip().upper()
+    letter = "E" if loc.startswith("E") else "D"
+    root = storage_root_for_location(letter)
+    payload = {
+        "storage_location": letter,
+        "dataset_root": str(root),
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    _SYNC_CONFIG_PATH.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
 
 def storage_root_for_location(storage_location: str | None) -> Path:
     loc = (storage_location or "D").strip().upper()
@@ -233,6 +248,11 @@ def export_session_to_yoga_dataset(
             continue
         placeholder = root / day_name / other_name
         placeholder.mkdir(parents=True, exist_ok=True)
+
+    try:
+        write_dataset_sync_config(storage_location)
+    except OSError:
+        pass
 
     return {
         "ok": True,
