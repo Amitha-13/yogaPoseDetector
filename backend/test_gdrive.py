@@ -1,51 +1,41 @@
-from pathlib import Path
+"""Test Google Drive OAuth access to the YogaDataset folder."""
 
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
+from __future__ import annotations
 
-SCOPES = ["https://www.googleapis.com/auth/drive"]
-
-BASE_DIR = Path(__file__).resolve().parent
-CREDENTIALS_FILE = BASE_DIR / "gdrive_service_account.json"
-
-FOLDER_ID = "1KyRLCML879M7x5LZic1s3ozYtH7Bfvo8"
+from gdrive_oauth import oauth_status
+from gdrive_sync import GDRIVE_PARENT_FOLDER_ID, check_target_folder_uploadable, get_drive_service
 
 
-def main():
-    print("\n=== Google Drive Connection Test ===\n")
-
-    if not CREDENTIALS_FILE.exists():
-        print(f"Credentials file not found: {CREDENTIALS_FILE}")
+def main() -> None:
+    print("\n=== Google Drive OAuth Connection Test ===\n")
+    status = oauth_status()
+    print("OAuth status:", status)
+    if not status.get("oauth_token_present"):
+        print("\nNo token found. Run:\n  python setup_gdrive_oauth.py\n")
         return
 
-    creds = service_account.Credentials.from_service_account_file(
-        str(CREDENTIALS_FILE),
-        scopes=SCOPES,
-    )
-
-    service = build("drive", "v3", credentials=creds)
-
-    try:
-        folder = (
-            service.files()
-            .get(
-                fileId=FOLDER_ID,
-                fields="id,name,mimeType"
-            )
-            .execute()
+    service = get_drive_service()
+    folder = (
+        service.files()
+        .get(
+            fileId=GDRIVE_PARENT_FOLDER_ID,
+            fields="id,name,mimeType,driveId",
+            supportsAllDrives=True,
         )
+        .execute()
+    )
+    print("\nFolder read: OK")
+    print(f"  Name : {folder['name']}")
+    print(f"  ID   : {folder['id']}")
+    print(f"  Type : {folder['mimeType']}")
 
-        print("Connection successful.\n")
-
-        print(f"Folder Name : {folder['name']}")
-        print(f"Folder ID   : {folder['id']}")
-        print(f"Type        : {folder['mimeType']}")
-
-        print("\nService account can access YogaDataset.\n")
-
-    except Exception as e:
-        print("\nConnection failed.\n")
-        print(str(e))
+    check = check_target_folder_uploadable(service, GDRIVE_PARENT_FOLDER_ID)
+    print(f"\nUpload check: {'OK' if check.get('ok') else 'FAILED'}")
+    if check.get("ok"):
+        print(f"  Mode: {check.get('mode')}")
+    else:
+        print(f"  Error: {check.get('error')}")
+    print()
 
 
 if __name__ == "__main__":

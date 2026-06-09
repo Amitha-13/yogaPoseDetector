@@ -13,10 +13,10 @@ import {
 } from "../utils/practicePoseAnalysis";
 import { getTargetAnglesForPoseName } from "../data/practicePoseTargets";
 
-const WASM_BASE =
-  "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
+const WASM_BASE = "/assets/mediapipe/wasm";
+
 const MODEL_PATH =
-  "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task";
+  "/assets/mediapipe/models/pose_landmarker_lite.task";
 
 const CORE_INDICES = [
   POSE_LM.LEFT_SHOULDER,
@@ -139,6 +139,7 @@ export function usePracticePoseDetection({
         let result;
         try {
           result = landmarker.detectForVideo(video, performance.now());
+          console.log("Pose Result:", result);
         } catch {
           rafId = requestAnimationFrame(loop);
           return;

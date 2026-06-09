@@ -14,11 +14,9 @@ Legacy zip-per-session upload (staging / old Sessions layout):
 Background service (every 5 minutes):
   python yoga_dataset_gdrive_sync.py --loop
 
-Credentials (pick one):
-  - backend/gdrive_service_account.json (preferred)
-  - GOOGLE_APPLICATION_CREDENTIALS
-  - backend/gdrive_credentials.json
-  - Interactive OAuth: backend/gdrive_token.json
+Credentials (OAuth):
+  - backend/gdrive_oauth_client.json
+  - backend/gdrive_token.json (run python setup_gdrive_oauth.py once)
 
 Does NOT run during recording.
 """

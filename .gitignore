@@ -13,6 +13,9 @@ backend/venv/
 backend/gdrive_service_account.json
 backend/.gdrive_sync_state.json
 backend/dataset_sync_config.json
+backend/logs/gdrive_sync.log
+backend/gdrive_oauth_client.json
+backend/gdrive_token.json
 
 # Python cache
 backend/__pycache__/

@@ -10,12 +10,12 @@ export const COLLECTION_TYPES = {
   B: {
     id: "B_Video_IMU",
     label: "B_Video_IMU",
-    description: "Video + Landmarks + IMU1–IMU10",
+    description: "Video + Landmarks + Available Body IMUs",
   },
   C: {
     id: "C_Video_IMU_Footrest",
     label: "C_Video_IMU_Footrest",
-    description: "Video + Landmarks + IMU1–IMU10 + Footrest IMU11–IMU26",
+    description: "Video + Landmarks + Available Body & Footrest IMUs",
   },
 };
 
@@ -44,6 +44,7 @@ export function getFootrestConnectionState(imuDevices) {
   const footrestOnline = FOOTREST_IDS.filter((id) => imuDevices[id]?.online === true);
   return {
     allConnected: footrestOnline.length === FOOTREST_IDS.length,
+    anyConnected: footrestOnline.length > 0,
     connectedIds: footrestOnline,
     requiredCount: FOOTREST_IDS.length,
   };
@@ -54,8 +55,8 @@ export function getCollectionTypeAvailability(imuDevices) {
   const footrest = getFootrestConnectionState(imuDevices);
 
   const aEnabled = true;
-  const bEnabled = body.allConnected;
-  const cEnabled = body.allConnected && footrest.allConnected;
+  const bEnabled = body.anyConnected;
+  const cEnabled = body.anyConnected && footrest.anyConnected;
 
   return {
     A: {
@@ -66,14 +67,14 @@ export function getCollectionTypeAvailability(imuDevices) {
       enabled: bEnabled,
       disabledReason: bEnabled
         ? null
-        : "Body IMU sensors (IMU1–IMU10) not all connected",
+        : "No body IMU sensors connected",
     },
     C: {
       enabled: cEnabled,
-      disabledReason: !body.allConnected
-        ? "Body IMU sensors (IMU1–IMU10) not all connected"
-        : !footrest.allConnected
-          ? "Footrest sensors not connected"
+      disabledReason: !body.anyConnected
+        ? "No body IMU sensors connected"
+        : !footrest.anyConnected
+          ? "No footrest IMU sensors connected"
           : null,
     },
   };

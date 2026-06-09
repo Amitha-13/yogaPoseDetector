@@ -11,7 +11,8 @@ Usage:
   python yoga_dataset_gdrive_sync.py --loop --interval 300
   python yoga_dataset_gdrive_sync.py --status
 
-Requires backend/gdrive_service_account.json (or GOOGLE_APPLICATION_CREDENTIALS).
+Requires OAuth: backend/gdrive_oauth_client.json and backend/gdrive_token.json
+(run python setup_gdrive_oauth.py once per machine).
 """
 
 from __future__ import annotations

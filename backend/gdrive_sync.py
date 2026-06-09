@@ -1,7 +1,7 @@
 """
 Incremental Google Drive sync for local YogaDataset folders.
 
-Mirrors {D|E}:\\YogaDataset\\** under the shared Drive folder (service account).
+Mirrors {D|E}:\\YogaDataset\\** under Google Drive (OAuth 2.0 user credentials).
 Offline-first: failures are logged; sync retries on the next cycle.
 """
 
@@ -23,8 +23,28 @@ from yoga_dataset import drive_volume_available, storage_root_for_location
 logger = logging.getLogger(__name__)
 
 BACKEND_DIR = Path(__file__).resolve().parent
-DEFAULT_CREDENTIALS = BACKEND_DIR / "gdrive_service_account.json"
-LEGACY_CREDENTIALS = BACKEND_DIR / "gdrive_credentials.json"
+LOG_DIR = BACKEND_DIR / "logs"
+SYNC_LOG_PATH = LOG_DIR / "gdrive_sync.log"
+
+
+def _configure_file_logger() -> logging.Logger:
+    """Dedicated log file for sync diagnostics (backend/logs/gdrive_sync.log)."""
+    file_logger = logging.getLogger("yoga.gdrive_sync.file")
+    if file_logger.handlers:
+        return file_logger
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    handler = logging.FileHandler(SYNC_LOG_PATH, encoding="utf-8")
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
+    )
+    file_logger.addHandler(handler)
+    file_logger.setLevel(logging.DEBUG)
+    file_logger.propagate = False
+    return file_logger
+
+
+sync_log = _configure_file_logger()
+
 SYNC_STATE_PATH = BACKEND_DIR / ".gdrive_sync_state.json"
 SYNC_CONFIG_PATH = BACKEND_DIR / "dataset_sync_config.json"
 
@@ -109,33 +129,19 @@ def resolve_dataset_roots() -> list[Path]:
     return roots
 
 
-def _load_google_deps():
+def _load_google_build():
     try:
-        from google.oauth2 import service_account
-        from google.oauth2.credentials import Credentials
-        from google_auth_oauthlib.flow import InstalledAppFlow
-        from google.auth.transport.requests import Request
         from googleapiclient.discovery import build
         from googleapiclient.http import MediaFileUpload
     except ImportError as e:
         raise RuntimeError(
             "Install: pip install google-api-python-client google-auth google-auth-oauthlib"
         ) from e
-    return (
-        service_account,
-        Credentials,
-        InstalledAppFlow,
-        Request,
-        build,
-        MediaFileUpload,
-    )
+    return build, MediaFileUpload
 
 
 def check_target_folder_uploadable(service, folder_id: str) -> dict[str, Any]:
-    """
-    Service accounts cannot upload into personal My Drive (Gmail) folders.
-    Uploads must target a Google Shared Drive (Team Drive) or domain-delegated user.
-    """
+    """Verify the YogaDataset destination folder exists and accepts new files."""
     meta = (
         service.files()
         .get(
@@ -145,66 +151,32 @@ def check_target_folder_uploadable(service, folder_id: str) -> dict[str, Any]:
         )
         .execute()
     )
-    if meta.get("driveId"):
-        return {"ok": True, "mode": "shared_drive", "drive_id": meta["driveId"]}
     caps = meta.get("capabilities") or {}
     if not caps.get("canAddChildren"):
         return {
             "ok": False,
-            "error": "Service account lacks permission to add files to YogaDataset.",
+            "error": (
+                "Cannot add files to the YogaDataset folder. "
+                "Sign in with the Google account that owns this folder."
+            ),
         }
+    mode = "shared_drive" if meta.get("driveId") else "my_drive"
     return {
-        "ok": False,
-        "error": (
-            "YogaDataset is on a personal Google Drive folder. Google does not allow "
-            "service-account uploads there (storageQuotaExceeded). Move YogaDataset to a "
-            "Google Shared Drive (Team Drive), add the service account as Content manager, "
-            "set YOGA_DATASET_FOLDER_ID to that folder, and optionally YOGA_GDRIVE_SHARED_DRIVE_ID."
-        ),
-        "hint": "shared_drive_required",
+        "ok": True,
+        "mode": mode,
+        "drive_id": meta.get("driveId"),
+        "folder_name": meta.get("name"),
+        "folder_id": meta.get("id"),
     }
 
 
 def get_drive_service():
-    """Service account first (gdrive_service_account.json), then legacy paths."""
-    (
-        service_account,
-        Credentials,
-        InstalledAppFlow,
-        Request,
-        build,
-        _MediaFileUpload,
-    ) = _load_google_deps()
+    """Google Drive API client using OAuth user credentials (gdrive_token.json)."""
+    from gdrive_oauth import get_oauth_credentials
 
-    env_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
-    candidates = [
-        Path(env_path) if env_path else None,
-        DEFAULT_CREDENTIALS,
-        LEGACY_CREDENTIALS,
-    ]
-    sa_path = next((p for p in candidates if p and p.is_file()), None)
-
-    token_path = BACKEND_DIR / "gdrive_token.json"
-    oauth_client = BACKEND_DIR / "gdrive_oauth_client.json"
-
-    creds = None
-    if sa_path is not None:
-        creds = service_account.Credentials.from_service_account_file(
-            str(sa_path), scopes=SCOPES
-        )
-    elif token_path.exists():
-        creds = Credentials.from_authorized_user_file(str(token_path), SCOPES)
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-    elif oauth_client.exists():
-        flow = InstalledAppFlow.from_client_secrets_file(str(oauth_client), SCOPES)
-        creds = flow.run_local_server(port=0)
-        token_path.write_text(creds.to_json(), encoding="utf-8")
-    else:
-        raise FileNotFoundError(
-            f"No Google credentials found. Place service account at {DEFAULT_CREDENTIALS}"
-        )
-
+    build, _MediaFileUpload = _load_google_build()
+    creds = get_oauth_credentials(allow_interactive=False)
+    sync_log.debug("drive service using oauth credentials valid=%s", creds.valid)
     return build("drive", "v3", credentials=creds, cache_discovery=False)
 
 
@@ -291,6 +263,7 @@ def ensure_drive_folder(service, parent_id: str, name: str, cache: dict[tuple[st
     children = _list_child_folders(service, parent_id)
     if name in children:
         folder_id = children[name]
+        sync_log.debug("folder exists name=%s parent_id=%s folder_id=%s", name, parent_id, folder_id)
     else:
         meta = {
             "name": name,
@@ -301,6 +274,12 @@ def ensure_drive_folder(service, parent_id: str, name: str, cache: dict[tuple[st
             service.files()
             .create(body=meta, fields="id", **_DRIVE_WRITE_KW)
             .execute()["id"]
+        )
+        sync_log.info(
+            "folder created name=%s parent_id=%s folder_id=%s",
+            name,
+            parent_id,
+            folder_id,
         )
     cache[key] = folder_id
     return folder_id
@@ -415,10 +394,17 @@ def sync_yoga_dataset_root(
             stored = state["files"].get(state_key)
             if signatures_match(sig, stored) and stored.get("drive_file_id"):
                 stats["skipped"] += 1
+                sync_log.info(
+                    "skipped unchanged local=%s drive_rel=%s size=%s",
+                    local_path,
+                    rel_posix,
+                    sig.get("size"),
+                )
                 continue
 
             rel_parts = rel_posix.split("/")
             parent_parts, file_name = rel_parts[:-1], rel_parts[-1]
+            drive_dest = "/".join(parent_parts + [file_name]) if parent_parts else file_name
             drive_folder_id = ensure_drive_path(
                 service, drive_parent_id, parent_parts, folder_cache
             )
@@ -426,6 +412,13 @@ def sync_yoga_dataset_root(
             remote = _find_remote_file(service, drive_folder_id, file_name)
             remote_id = remote["id"] if remote else stored.get("drive_file_id") if stored else None
 
+            sync_log.info(
+                "upload start local=%s drive_dest=%s parent_folder_id=%s update=%s",
+                local_path,
+                drive_dest,
+                drive_folder_id,
+                bool(remote_id),
+            )
             file_id = upload_file_to_drive(
                 service,
                 local_path,
@@ -440,9 +433,21 @@ def sync_yoga_dataset_root(
                 "synced_at": _utc_now_iso(),
             }
             stats["uploaded"] += 1
+            sync_log.info(
+                "upload success local=%s drive_dest=%s file_id=%s",
+                local_path,
+                drive_dest,
+                file_id,
+            )
         except Exception as exc:
             stats["failed"] += 1
             logger.exception("Failed to sync %s: %s", rel_posix, exc)
+            sync_log.error(
+                "upload failure local=%s drive_rel=%s error=%s",
+                local_path,
+                rel_posix,
+                exc,
+            )
             errors = state.setdefault("recent_errors", [])
             errors.append(
                 {"path": rel_posix, "error": str(exc), "at": _utc_now_iso()}
@@ -458,6 +463,39 @@ def sync_yoga_dataset_root(
     return stats
 
 
+def derive_gdrive_sync_state(
+    *,
+    pending: int,
+    upload_target_check: dict[str, Any] | None,
+) -> tuple[str, str]:
+    """UI-friendly sync phase: pending | syncing | synced | failed."""
+    if _runtime_status.get("running"):
+        return "syncing", "Background sync in progress."
+
+    if upload_target_check is not None and not upload_target_check.get("ok"):
+        return "failed", str(
+            upload_target_check.get("error") or "Google Drive target not uploadable."
+        )
+
+    last_error = _runtime_status.get("last_error")
+    failed_last = int(_runtime_status.get("files_failed_last_run") or 0)
+    if last_error and (pending > 0 or failed_last > 0):
+        return "failed", str(last_error)
+
+    if pending > 0:
+        if _runtime_status.get("last_sync_completed"):
+            return "pending", f"{pending} file(s) waiting for next sync cycle."
+        return "pending", "Waiting for background sync."
+
+    if _runtime_status.get("last_sync_success"):
+        return "synced", "Local YogaDataset matches last successful sync."
+
+    if _runtime_status.get("last_sync_completed"):
+        return "synced", "Sync cycle completed."
+
+    return "pending", "Waiting for background sync."
+
+
 def run_incremental_sync(
     *,
     drive_parent_id: str | None = None,
@@ -471,11 +509,21 @@ def run_incremental_sync(
     if not parent_id:
         return {"ok": False, "error": "YOGA_DATASET_FOLDER_ID not configured"}
 
+    cycle_started = time.perf_counter()
+    sync_log.info(
+        "sync start dry_run=%s drive_folder_id=%s",
+        dry_run,
+        parent_id,
+    )
+
+    sync_acquired = False
     with _sync_lock:
         if _runtime_status.get("running"):
+            sync_log.warning("sync skipped reason=sync_already_running")
             return {"ok": False, "error": "sync_already_running"}
         _runtime_status["running"] = True
         _runtime_status["last_sync_started"] = _utc_now_iso()
+        sync_acquired = True
 
     result: dict[str, Any] = {
         "ok": True,
@@ -490,10 +538,12 @@ def run_incremental_sync(
     try:
         roots = resolve_dataset_roots()
         _runtime_status["last_roots"] = [str(r) for r in roots]
+        sync_log.info("sync roots resolved count=%s paths=%s", len(roots), [str(r) for r in roots])
         if not roots:
             result["ok"] = False
             result["error"] = "no_dataset_roots_available"
             _runtime_status["last_error"] = result["error"]
+            sync_log.error("sync finish error=no_dataset_roots_available")
             return result
 
         if dry_run:
@@ -501,21 +551,25 @@ def run_incremental_sync(
             for root in roots:
                 pending += sum(1 for _ in iter_local_files(root))
             result["pending_files"] = pending
+            sync_log.info("sync dry_run finish pending_files=%s", pending)
             return result
 
         service = get_drive_service()
         upload_check = check_target_folder_uploadable(service, parent_id)
+        sync_log.info("upload target check result=%s", json.dumps(upload_check, default=str))
         if not upload_check.get("ok"):
             result["ok"] = False
             result["error"] = upload_check.get("error")
             result["hint"] = upload_check.get("hint")
             _runtime_status["last_error"] = result["error"]
+            sync_log.error("sync aborted upload_check failed error=%s", result["error"])
             return result
 
         state = load_sync_state()
         folder_cache: dict[tuple[str, str], str] = {}
 
         for root in roots:
+            sync_log.info("sync root start path=%s", root)
             root_stats = sync_yoga_dataset_root(
                 service,
                 root,
@@ -527,6 +581,13 @@ def run_incremental_sync(
             result["uploaded"] += root_stats["uploaded"]
             result["skipped"] += root_stats["skipped"]
             result["failed"] += root_stats["failed"]
+            sync_log.info(
+                "sync root finish path=%s uploaded=%s skipped=%s failed=%s",
+                root,
+                root_stats["uploaded"],
+                root_stats["skipped"],
+                root_stats["failed"],
+            )
 
         state["last_sync_completed"] = _utc_now_iso()
         state["last_sync_success"] = _utc_now_iso() if result["failed"] == 0 else state.get(
@@ -545,14 +606,29 @@ def run_incremental_sync(
             _runtime_status["last_error"] = f"{result['failed']} file(s) failed"
 
         result["completed_at"] = _runtime_status["last_sync_completed"]
+        elapsed = time.perf_counter() - cycle_started
+        sync_log.info(
+            "sync finish ok=%s uploaded=%s skipped=%s failed=%s duration_sec=%.2f",
+            result.get("ok"),
+            result.get("uploaded"),
+            result.get("skipped"),
+            result.get("failed"),
+            elapsed,
+        )
         return result
     except Exception as exc:
         logger.exception("Google Drive sync failed")
+        sync_log.exception(
+            "sync finish error=%s duration_sec=%.2f",
+            exc,
+            time.perf_counter() - cycle_started,
+        )
         _runtime_status["last_error"] = str(exc)
         return {"ok": False, "error": str(exc)}
     finally:
-        with _sync_lock:
-            _runtime_status["running"] = False
+        if sync_acquired:
+            with _sync_lock:
+                _runtime_status["running"] = False
 
 
 def get_sync_status() -> dict[str, Any]:
@@ -566,17 +642,43 @@ def get_sync_status() -> dict[str, Any]:
             if not signatures_match(sig, state["files"].get(state_key)):
                 pending += 1
 
+    from gdrive_oauth import oauth_status
+
+    oauth_info = oauth_status()
     upload_hint = None
-    try:
-        service = get_drive_service()
-        upload_hint = check_target_folder_uploadable(service, GDRIVE_PARENT_FOLDER_ID)
-    except Exception as exc:
-        upload_hint = {"ok": False, "error": str(exc)}
+    if oauth_info.get("oauth_token_present"):
+        try:
+            service = get_drive_service()
+            upload_hint = check_target_folder_uploadable(service, GDRIVE_PARENT_FOLDER_ID)
+        except Exception as exc:
+            upload_hint = {"ok": False, "error": str(exc), "hint": "oauth_reauthorize"}
+    else:
+        upload_hint = {
+            "ok": False,
+            "error": "OAuth token missing. Run: python setup_gdrive_oauth.py",
+            "hint": "oauth_required",
+        }
+
+    gdrive_state, gdrive_detail = derive_gdrive_sync_state(
+        pending=pending,
+        upload_target_check=upload_hint,
+    )
+
+    if not oauth_info.get("oauth_token_valid") and oauth_info.get("oauth_token_present"):
+        gdrive_state, gdrive_detail = "failed", (
+            "OAuth token invalid. Run: python setup_gdrive_oauth.py"
+        )
+    elif upload_hint and upload_hint.get("hint") == "oauth_required":
+        gdrive_state, gdrive_detail = "failed", upload_hint.get("error", gdrive_detail)
 
     return {
         "running": _runtime_status.get("running", False),
+        "gdrive_sync_state": gdrive_state,
+        "gdrive_sync_detail": gdrive_detail,
         "drive_folder_id": GDRIVE_PARENT_FOLDER_ID,
+        "drive_folder_name": "YogaDataset",
         "upload_target_check": upload_hint,
+        **oauth_info,
         "configured_dataset_root": cfg.get("dataset_root") if cfg else None,
         "storage_location": cfg.get("storage_location") if cfg else None,
         "last_sync_started": _runtime_status.get("last_sync_started")
@@ -592,6 +694,7 @@ def get_sync_status() -> dict[str, Any]:
         "last_error": _runtime_status.get("last_error"),
         "last_roots": _runtime_status.get("last_roots", []),
         "recent_errors": state.get("recent_errors", [])[-10:],
+        "log_file": str(SYNC_LOG_PATH),
         "state_file": str(SYNC_STATE_PATH),
         "config_file": str(SYNC_CONFIG_PATH),
     }
@@ -599,12 +702,24 @@ def get_sync_status() -> dict[str, Any]:
 
 def schedule_background_sync() -> None:
     """Fire-and-forget sync (does not block callers)."""
+    from gdrive_oauth import OAUTH_TOKEN_FILE
+
+    if not OAUTH_TOKEN_FILE.is_file():
+        sync_log.warning(
+            "sync not scheduled: missing gdrive_token.json — run setup_gdrive_oauth.py"
+        )
+        _runtime_status["last_error"] = (
+            "Google Drive OAuth not configured. Run: python setup_gdrive_oauth.py"
+        )
+        return
+    sync_log.info("sync scheduled reason=background_trigger")
 
     def _worker() -> None:
         try:
             run_incremental_sync()
         except Exception:
             logger.exception("Background Google Drive sync failed")
+            sync_log.exception("sync scheduled worker failed")
 
     threading.Thread(target=_worker, daemon=True, name="gdrive-sync-once").start()
 
@@ -621,6 +736,13 @@ def run_sync_loop(interval_sec: int = 300) -> None:
         try:
             result = run_incremental_sync()
             logger.info("Sync cycle: %s", json.dumps(result, default=str))
+            if not result.get("ok"):
+                sync_log.warning(
+                    "sync loop retry next_in_sec=%s reason=%s",
+                    interval_sec,
+                    result.get("error"),
+                )
         except Exception:
             logger.exception("Sync loop error")
+            sync_log.exception("sync loop error retry next_in_sec=%s", interval_sec)
         time.sleep(interval_sec)
