@@ -35,16 +35,15 @@ const LoginPage = () => {
   };
 
   return (
-    <div className="app-shell container py-5">
-      <form className="app-card p-4 mx-auto app-form-wrap" onSubmit={handleSubmit}>
-        <h1 className="h4 mb-3">Welcome Back</h1>
+    <div className="app-auth-shell"><div className="auth-orb auth-orb--one"/><div className="auth-orb auth-orb--two"/><div className="auth-grid"/><form className="app-card auth-card app-form-wrap" onSubmit={handleSubmit}>
+        <h1>Welcome back</h1><p className="auth-intro">Continue your mindful movement journey.</p>
         <div className="mb-3">
-          <label className="form-label">Email</label>
-          <input className="form-control" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          <label className="form-label" htmlFor="login-email">Email</label>
+          <input id="login-email" className="form-control" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
         </div>
         <div className="mb-3">
-          <label className="form-label">Password</label>
-          <input className="form-control" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+          <label className="form-label" htmlFor="login-password">Password</label>
+          <input id="login-password" className="form-control" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
         </div>
         {error ? <div className="alert alert-danger py-2">{error}</div> : null}
         <button className="btn app-btn-primary text-white w-100" disabled={loading}>
@@ -53,8 +52,7 @@ const LoginPage = () => {
         <p className="small mt-3 mb-0">
           New here? <Link to="/app/signup">Create account</Link>
         </p>
-      </form>
-    </div>
+      </form></div>
   );
 };
 

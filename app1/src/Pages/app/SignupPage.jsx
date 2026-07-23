@@ -51,12 +51,9 @@ const SignupPage = () => {
   };
 
   return (
-    <div className="app-shell container py-5">
-      <div className="app-card p-4 mx-auto app-form-wrap">
-        <h1 className="h4 mb-2">Create your account</h1>
-        <div className="progress app-progress mb-3">
-          <div className="progress-bar app-btn-primary" style={{ width: `${progress}%` }} />
-        </div>
+    <div className="app-auth-shell"><div className="auth-orb auth-orb--one"/><div className="auth-orb auth-orb--two"/><div className="auth-grid"/><div className="app-card auth-card app-form-wrap">
+        <h1>Create your account</h1><p className="auth-intro">Set up your personal practice profile in a few simple steps.</p>
+        <div className="signup-steps">{["Account","Profile","Experience"].map((label,index)=><div className={step >= index+1 ? "active" : ""} key={label}><span>{index+1}</span><small>{label}</small></div>)}</div>
         {step === 1 ? (
           <>
             <h2 className="h6">Step 1: Account</h2>
@@ -90,7 +87,7 @@ const SignupPage = () => {
           </>
         ) : null}
         {error ? <div className="alert alert-danger py-2 mt-2">{error}</div> : null}
-        <div className="d-flex justify-content-between mt-3">
+        <div className="d-flex justify-content-between mt-4">
           <button className="btn btn-outline-secondary" disabled={step === 1} onClick={() => setStep((s) => s - 1)}>
             Back
           </button>
@@ -107,8 +104,7 @@ const SignupPage = () => {
         <p className="small mt-3 mb-0">
           Already registered? <Link to="/app/login">Login</Link>
         </p>
-      </div>
-    </div>
+      </div></div>
   );
 };
 

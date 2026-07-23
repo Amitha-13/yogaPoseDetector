@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from "react";
-import "./Home.css";
-// import {Yoga_home}  from "../../assets/Yoga_home.png"
 import { Link } from "react-router-dom";
+import annaUniversityLogo from "../../../../server/assets/1200px-Anna_University_Logo.svg.png";
+import homepageBackground from "../../../assets/homepage_bg.png";
+import commonYogaProtocolLogo from "../../../assets/Common_Yoga_Protocol.jpg";
+import "./Home.css";
 
 const API_BASE = "http://127.0.0.1:3001";
 
@@ -10,75 +12,39 @@ const Home = () => {
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(`${API_BASE}/api/config/homepage_disclaimer`);
-        const data = await res.json();
-        if (!cancelled && res.ok) {
-          setDisclaimer(data.value || "");
-        }
-      } catch {
-        if (!cancelled) setDisclaimer("");
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    fetch(`${API_BASE}/api/config/homepage_disclaimer`)
+      .then((response) => response.json())
+      .then((data) => !cancelled && setDisclaimer(data.value || ""))
+      .catch(() => !cancelled && setDisclaimer(""));
+    return () => { cancelled = true; };
   }, []);
 
-  return (
-    <div className="homeContainer d-flex p-3">
-      <div className="homeInfo   d-flex flex-column p-4 my-auto gap-3  ">
-        <div className="homeinfo_data d-flex flex-column  justify-content-center gap-3   ">
-          <h1 className="homeInfo_heading">Yoga App </h1>
-          <h4 className="homeInfo_subheading">
-            Revitalize your mind, body, and soul
-          </h4>
-        </div>
-        {disclaimer ? (
-          <div className="homeDisclaimer">
-            <span className="homeDisclaimerIcon" aria-hidden>
-              ℹ️
-            </span>
-            <span className="homeDisclaimerText">{disclaimer}</span>
+  return <main>
+    <section className="research-hero" style={{ "--home-background": `url(${homepageBackground})` }}>
+      <div className="research-hero__overlay" />
+      <div className="research-hero__content">
+        <div className="research-hero__heading-row">
+          <img className="anna-university-logo" src={annaUniversityLogo} alt="Anna University" />
+          <div className="research-hero__title-block">
+            <p className="eyebrow">DIGITAL HEALTH · INTELLIGENT MOVEMENT</p>
+            <h1>DIGITAL TWIN AND AI-POWERED YOGA ASSISTANT SYSTEM WITH REAL-TIME ASANA POSE ESTIMATION AND CORRECTIVE FEEDBACK</h1>
           </div>
-        ) : null}
-        <div className="homeModuleCards d-flex flex-column flex-md-row gap-3 align-items-stretch">
-          <Link
-            to="/login"
-            className="homeModuleCard homeModuleCard--data text-decoration-none flex-fill"
-          >
-            <span className="homeModuleCard__icon" aria-hidden>
-              📊
-            </span>
-            <div className="homeModuleCard__body">
-              <div className="homeModuleCard__title">Data Collection</div>
-              <div className="homeModuleCard__subtitle">
-                For lab operators and researchers
-              </div>
-            </div>
-          </Link>
-          <Link
-            to="/app"
-            className="homeModuleCard homeModuleCard--practice text-decoration-none flex-fill"
-          >
-            <span className="homeModuleCard__icon" aria-hidden>
-              🧘
-            </span>
-            <div className="homeModuleCard__body">
-              <div className="homeModuleCard__title">Yoga Practice</div>
-              <div className="homeModuleCard__subtitle">
-                For individual users and learners
-              </div>
-            </div>
-          </Link>
+          <div className="common-yoga-protocol-mark">
+            <img className="common-yoga-protocol-logo" src={commonYogaProtocolLogo} alt="Common Yoga Protocol" />
+            <span>Common Yoga Protocol</span>
+          </div>
         </div>
+        <div className="hero-rule" />
+        <p className="research-hero__funding">Funded by CMRG</p>
+        <p className="investigator"><b>Principal Investigator:</b> <span className="investigator__name">Dr. S. Chitrakala</span><span>Professor</span><span>Department of Computer Science and Engineering</span><span>College of Engineering Guindy</span><span>Anna University, Chennai</span></p>
+        <div className="homeModuleCards">
+          <Link to="/login" className="homeModuleCard homeModuleCard--data"><div className="module-icon">▦</div><div><b>Data Collection</b><p>For lab operators and researchers</p></div><strong>→</strong></Link>
+          <Link to="/app" className="homeModuleCard homeModuleCard--practice"><div className="module-icon">◌</div><div><b>Yoga Practice</b><p>For individual users and learners</p></div><strong>→</strong></Link>
+        </div>
+        {disclaimer && <p className="homeDisclaimer"><span aria-hidden="true">ⓘ</span>{disclaimer}</p>}
       </div>
-      {/* <div className="homeImg flex-grow-1  ">
-        <img className="" src="./yoga_home.png" alt="" />
-      </div> */}
-    </div>
-  );
+    </section>
+  </main>;
 };
 
 export default Home;

@@ -9,6 +9,8 @@ import CONFIG from "../../config";
 import { countActiveOnline, normalizeImuPollPayload } from "../../utils/sensorStatus";
 import { playCountdownBeep } from "../../utils/countdownBeep";
 import { startRecording, stopRecording } from "../../utils/recorder";
+import { getPoseMessages } from "../../data/poseMessages";
+import PoseInstructionDialog from "../../Components/PoseInstructionDialog";
 import "../../Pages/SequencerPage.css";
 import "../../Pages/Practice/PracticeSessionPage.css";
 import "./AppPages.css";
@@ -48,6 +50,7 @@ const AppPracticePage = () => {
   const [corrections, setCorrections] = useState([]);
   const [saveResult, setSaveResult] = useState(null);
   const [cameraReady, setCameraReady] = useState(false);
+  const [instructionPhase, setInstructionPhase] = useState(null);
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -247,6 +250,9 @@ const AppPracticePage = () => {
           error: saveError,
         });
         setRecordPhase("done");
+        if (getPoseMessages(selectedPose)?.after?.length) {
+          setInstructionPhase("after");
+        }
       } finally {
         setStopping(false);
       }
@@ -308,6 +314,14 @@ const AppPracticePage = () => {
     }, 1000);
   }, [selectedPose, recordPhase, sessionTZero, startRecordingTimer]);
 
+  const handleStartRecording = useCallback(() => {
+    if (getPoseMessages(selectedPose)?.before?.length) {
+      setInstructionPhase("before");
+      return;
+    }
+    beginCountdown();
+  }, [beginCountdown, selectedPose]);
+
   const openPose = (poseId) => {
     clearTimers();
     setSelectedPoseId(poseId);
@@ -315,6 +329,7 @@ const AppPracticePage = () => {
     setElapsedSec(0);
     elapsedRef.current = 0;
     setSaveResult(null);
+    setInstructionPhase(null);
     setDetectedPose("—");
     setConfidence(0);
     setCorrections([]);
@@ -326,6 +341,7 @@ const AppPracticePage = () => {
     setView("grid");
     setRecordPhase("idle");
     setSaveResult(null);
+    setInstructionPhase(null);
   };
 
   const endSession = async () => {
@@ -364,10 +380,26 @@ const AppPracticePage = () => {
   const connectedCount = countActiveOnline(imuDevices, CONFIG.SENSOR_SLOTS);
   const remaining = Math.max(0, MAX_RECORDING_SECONDS - elapsedSec);
   const progressPercent = (elapsedSec / MAX_RECORDING_SECONDS) * 100;
+  const poseMessages = getPoseMessages(selectedPose);
 
   return (
     <div className="sequencer-fullscreen">
       <AppImuStatusStrip />
+      {instructionPhase && (
+        <PoseInstructionDialog
+          pose={selectedPose}
+          phase={instructionPhase}
+          messages={poseMessages?.[instructionPhase]}
+          onContinue={() => {
+            if (instructionPhase === "before") {
+              setInstructionPhase(null);
+              beginCountdown();
+              return;
+            }
+            setInstructionPhase(null);
+          }}
+        />
+      )}
       {view === "grid" ? (
         <div className="container-fluid py-4 sequencer-select-view">
           <div className="sequencer-select-intro">
@@ -497,25 +529,15 @@ const AppPracticePage = () => {
 
           {recordPhase === "done" && saveResult && (
             <div className="app-practice-done-panel">
-              <h3 className="h4 text-success mb-2">Recording completed</h3>
-              <p className="mb-1">
-                <strong>{selectedPose?.name}</strong> — {fmt(saveResult.duration)} recorded
-              </p>
-              <p className="mb-2 small">
-                {saveResult.ok
-                  ? "Saved successfully to local session storage."
-                  : `Save issue: ${saveResult.error || "Unknown error"}`}
-              </p>
-              {saveResult.storedOffline && (
-                <p className="small text-muted mb-3">
-                  Folder: <code>{saveResult.directory}</code>
-                  <br />
-                  Includes video, landmarks, IMU (if connected), and metadata.
-                </p>
-              )}
-              <div className="d-flex flex-wrap gap-2 justify-content-center">
-                <button type="button" className="btn btn-primary" onClick={backToGrid}>
-                  Practice another pose
+              <div className="recording-success-card" role="status" aria-live="polite">
+                <div className="recording-success-icon" aria-hidden="true">✓</div>
+                <h3>Recording Complete</h3>
+                <p className="success-pose">{selectedPose?.name}</p>
+                <p className="success-duration">{fmt(saveResult.duration)} recorded</p>
+                <p className="success-status">{saveResult.ok ? "Your practice session was saved successfully." : `Save issue: ${saveResult.error || "Unknown error"}`}</p>
+                {saveResult.storedOffline && <p className="small text-muted mt-3 mb-0">Saved locally with recording data.</p>}
+                <button type="button" className="btn btn-primary mt-4" onClick={backToGrid}>
+                  ↻ Practice Another Pose
                 </button>
               </div>
             </div>
@@ -534,7 +556,7 @@ const AppPracticePage = () => {
                   <button
                     type="button"
                     className="btn btn-danger btn-lg w-100 fw-semibold"
-                    onClick={beginCountdown}
+                    onClick={handleStartRecording}
                     disabled={!cameraReady}
                   >
                     ● Start Recording

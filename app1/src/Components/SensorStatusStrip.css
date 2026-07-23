@@ -28,8 +28,12 @@
 
 .sensor-strip__capsules {
   display: flex;
-  flex-wrap: wrap;
+  flex: 1;
+  flex-wrap: nowrap;
   gap: 6px;
+  overflow-x: auto;
+  scrollbar-width:thin;
+  padding-bottom:1px;
 }
 
 .sensor-capsule {
@@ -42,7 +46,10 @@
   font-size: 11px;
   line-height: 1;
   font-weight: 600;
+  flex:0 0 auto;
 }
+
+@media(max-width:620px){.sensor-strip{gap:8px;padding:6px 9px}.sensor-strip__bridge{font-size:11px}.sensor-capsule{min-width:43px;padding:3px 7px;font-size:10px}}
 
 .sensor-capsule--live {
   background: rgba(16, 185, 129, 0.22);

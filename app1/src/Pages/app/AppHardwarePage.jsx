@@ -145,7 +145,7 @@ const AppHardwarePage = () => {
             <div className="card status-card shadow-sm">
               <div className="card-body">
                 <h2 className="h5 card-title mb-2">
-                  {greetingByHour()}, {currentUser?.full_name || "Yogi"}
+                  Namaste, {currentUser?.full_name || "Yogi"} 🙏
                 </h2>
                 <p className="small text-muted mb-0">
                   Complete startup checks, then begin your practice session.

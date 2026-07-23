@@ -5,15 +5,8 @@ import "./AppPages.css";
 
 const API_BASE = "http://127.0.0.1:3001";
 
-const greetingByHour = () => {
-  const h = new Date().getHours();
-  if (h < 12) return "Good Morning";
-  if (h < 17) return "Good Afternoon";
-  return "Good Evening";
-};
-
 const DashboardPage = () => {
-  const { token, currentUser, logout } = useAuth();
+  const { token, currentUser } = useAuth();
   const [rows, setRows] = useState([]);
   const [historySessions, setHistorySessions] = useState([]);
 
@@ -30,9 +23,7 @@ const DashboardPage = () => {
         if (!cancelled) setRows([]);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [token]);
 
   useEffect(() => {
@@ -43,16 +34,12 @@ const DashboardPage = () => {
           headers: { Authorization: `Bearer ${token}` },
         });
         const data = await res.json();
-        if (!cancelled && res.ok) {
-          setHistorySessions(data.sessions || []);
-        }
+        if (!cancelled && res.ok) setHistorySessions(data.sessions || []);
       } catch {
         if (!cancelled) setHistorySessions([]);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [token]);
 
   const totals = useMemo(() => {
@@ -63,41 +50,37 @@ const DashboardPage = () => {
       totalMinutes: Math.round(totalSeconds / 60),
       totalSessions: historySessions.length,
       top3: [...rows].sort((a, b) => b.total_count - a.total_count).slice(0, 3),
+      averageMinutes: historySessions.length ? Math.round(totalSeconds / 60 / historySessions.length) : 0,
+      mostPracticed: [...rows].sort((a, b) => b.total_count - a.total_count)[0],
     };
   }, [rows, historySessions.length]);
 
   return (
-    <div className="app-shell container py-4">
-      <div className="d-flex justify-content-between align-items-center mb-3">
-        <h1 className="h4 mb-0">
-          {greetingByHour()}, {currentUser?.full_name || "Yogi"}
-        </h1>
-        <button className="btn btn-outline-secondary btn-sm" onClick={logout}>
-          Logout
-        </button>
+    <div className="app-shell dashboard-shell">
+      <div className="dashboard-head"><div><p className="eyebrow">PERSONAL PRACTICE SPACE</p><h1>Namaste, {currentUser?.full_name || "Yogi"} <span aria-label="namaste">🙏</span></h1><p>Your yoga practice at a glance.</p></div></div>
+      <div className="stat-grid">
+        <div className="stat-card"><span>◷</span><small>Total Sessions</small><b>{totals.totalSessions}</b></div>
+        <div className="stat-card stat-card--green"><span>◌</span><small>Total Practice Time</small><b>{totals.totalMinutes}<em> min</em></b></div>
+        <div className="stat-card"><span>◎</span><small>Total Poses Practiced</small><b>{totals.totalPoses}</b></div>
+        <div className="stat-card stat-card--maroon"><span>◴</span><small>Average Session Duration</small><b>{totals.averageMinutes}<em> min</em></b></div>
       </div>
-      <div className="app-summary-grid mb-3">
-        <div className="app-card p-3"><strong>Total Sessions</strong><div>{totals.totalSessions}</div></div>
-        <div className="app-card p-3"><strong>Total Poses Practiced</strong><div>{totals.totalPoses}</div></div>
-        <div className="app-card p-3"><strong>Total Practice Time</strong><div>{totals.totalMinutes} min</div></div>
-      </div>
-      <div className="d-flex gap-2 mb-3">
-        <Link to="/app/hardware" className="btn app-btn-primary text-white">Start Practice Session</Link>
-        <Link to="/app/history" className="btn btn-outline-dark">View History</Link>
-      </div>
-      <div className="app-card p-3">
-        <h2 className="h6">Most Practiced Poses</h2>
-        <div className="app-summary-grid">
-          {totals.top3.map((pose) => (
-            <div className="border rounded p-2 bg-white" key={pose.pose_name}>
-              <div className="fw-semibold">{pose.pose_name}</div>
-              <div className="small fst-italic text-muted">{pose.pose_sanskrit}</div>
-              <div className="small">{pose.total_count} times</div>
-            </div>
-          ))}
-          {totals.top3.length === 0 ? <div className="text-muted small">No practice data yet.</div> : null}
+      <div className="dashboard-cta"><div><p className="eyebrow">READY WHEN YOU ARE</p><h2>Ready for your next session?</h2><p className="mb-0 mt-1 small">Continue your mindful movement with real-time pose assistance.</p></div><div><Link to="/app/hardware" className="btn app-btn-primary text-white">Start Practice →</Link><Link to="/app/history" className="btn btn-outline-dark ms-2">View History</Link></div></div>
+      <div className="dashboard-lower">
+        <div className="app-card dashboard-panel">
+          <h2>Most Practiced Pose</h2>
+          <div className="featured-pose"><span>◌</span><div><b>{totals.mostPracticed?.pose_name || "No pose recorded yet"}</b><p>{totals.mostPracticed ? `${totals.mostPracticed.total_count} completed practices` : "Start a session to build your profile."}</p></div></div>
         </div>
       </div>
+      <div className="app-card dashboard-panel pose-list"><h2>Pose Activity</h2><div className="app-summary-grid">
+        {totals.top3.map((pose) => (
+          <div className="border rounded p-2 bg-white" key={pose.pose_name}>
+            <div className="fw-semibold">{pose.pose_name}</div>
+            <div className="small fst-italic text-muted">{pose.pose_sanskrit}</div>
+            <div className="small mt-1">{pose.total_count} practices</div>
+          </div>
+        ))}
+        {totals.top3.length === 0 ? <div className="text-muted small">No practice data yet.</div> : null}
+      </div></div>
     </div>
   );
 };

@@ -6,6 +6,8 @@ import { usePracticePoseDetection } from "../../hooks/usePracticePoseDetection";
 import { startRecording, stopRecording } from "../../utils/recorder";
 import { createSessionZip } from "../../utils/sessionExport";
 import { checkRecorderHealth } from "../../utils/sessionRecorderApi";
+import { getPoseMessages } from "../../data/poseMessages";
+import PoseInstructionDialog from "../../Components/PoseInstructionDialog";
 import "./PracticeSessionPage.css";
 
 const confidenceTone = (pct) => {
@@ -48,6 +50,7 @@ const PracticeSessionPage = () => {
   const [saveStatus, setSaveStatus] = useState(null);
   const [saving, setSaving] = useState(false);
   const [backendReady, setBackendReady] = useState(false);
+  const [instructionPhase, setInstructionPhase] = useState(null);
 
   const stopCamera = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -116,6 +119,9 @@ const PracticeSessionPage = () => {
 
       setRecordingData(entry);
       setSessionPhase("done");
+      if (getPoseMessages(pose)?.after?.length) {
+        setInstructionPhase("after");
+      }
       stopCamera();
 
       if (reason === "timeout") {
@@ -219,6 +225,14 @@ const PracticeSessionPage = () => {
     playBuzzer,
     startRecordingTimer,
   ]);
+
+  const handleStartRecording = useCallback(() => {
+    if (getPoseMessages(pose)?.before?.length) {
+      setInstructionPhase("before");
+      return;
+    }
+    void beginRecording();
+  }, [beginRecording, pose]);
 
   useEffect(() => {
     if (!pose) {
@@ -343,9 +357,25 @@ const PracticeSessionPage = () => {
   }
 
   const confidencePct = Math.round(typeof confidence === "number" ? confidence : 0);
+  const poseMessages = getPoseMessages(pose);
 
   return (
     <div className="practice-session container-fluid py-4">
+      {instructionPhase && (
+        <PoseInstructionDialog
+          pose={pose}
+          phase={instructionPhase}
+          messages={poseMessages?.[instructionPhase]}
+          onContinue={() => {
+            if (instructionPhase === "before") {
+              setInstructionPhase(null);
+              void beginRecording();
+              return;
+            }
+            setInstructionPhase(null);
+          }}
+        />
+      )}
       <div className="row g-4 align-items-stretch">
         <div className="col-12 col-lg-7">
           <div className="practice-session__video-wrap">
@@ -516,7 +546,7 @@ const PracticeSessionPage = () => {
                 <button
                   type="button"
                   className="btn btn-danger mt-auto fw-semibold"
-                  onClick={() => void beginRecording()}
+                  onClick={handleStartRecording}
                 >
                   ● Start Recording
                 </button>
